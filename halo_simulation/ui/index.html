@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HALO — Live simulation</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --coral: #f78166;
+      --blue: #79c0ff;
+      --green: #3fb950;
+      --amber: #d29922;
+      --red: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, Segoe UI, Roboto, sans-serif;
+      background: var(--bg); color: var(--text); height: 100vh; overflow: hidden;
+    }
+    #topbar {
+      display: flex; align-items: center; gap: 1rem; padding: 0.5rem 1rem;
+      background: var(--panel); border-bottom: 1px solid #30363d; flex-wrap: wrap;
+    }
+    #topbar h1 { margin: 0; font-size: 1.1rem; letter-spacing: 0.05em; }
+    #topbar label { font-size: 0.8rem; color: var(--muted); }
+    #topbar input, #topbar select { background: #21262d; border: 1px solid #30363d; color: var(--text); padding: 0.25rem 0.5rem; border-radius: 4px; }
+    #topbar button {
+      background: var(--accent); color: #fff; border: none; padding: 0.4rem 0.9rem; border-radius: 4px; cursor: pointer; font-weight: 600;
+    }
+    #topbar button#stop { background: #484f58; }
+    #simTime { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--green); }
+    #speedNote { font-size: 0.75rem; color: var(--muted); max-width: 18rem; }
+    #layout {
+      display: grid; grid-template-columns: 25% 40% 35%; height: calc(100vh - 52px);
+    }
+    #colLeft { border-right: 1px solid #30363d; overflow-y: auto; padding: 0.5rem; }
+    #colMid { display: flex; flex-direction: column; border-right: 1px solid #30363d; min-height: 0; }
+    #colRight { overflow-y: auto; padding: 0.5rem; }
+    .agent-card {
+      background: var(--panel); border-radius: 8px; padding: 0.6rem; margin-bottom: 0.5rem;
+      border: 1px solid #30363d; position: relative;
+    }
+    .agent-card h3 { margin: 0 0 0.25rem 0; font-size: 0.85rem; display: flex; align-items: center; gap: 0.35rem; }
+    .badge { font-size: 0.65rem; padding: 0.1rem 0.35rem; border-radius: 4px; text-transform: uppercase; }
+    .badge.person { background: #23863633; color: #3fb950; }
+    .badge.device { background: #388bfd33; color: var(--accent); }
+    .badge.specialist { background: #a371f733; color: #d2a8ff; }
+    .status-badge {
+      display: inline-block; font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 4px; margin-top: 0.25rem;
+    }
+    .st-idle { background: #30363d; color: var(--muted); }
+    .st-negotiating { background: #388bfd44; color: var(--accent); }
+    .st-resolved { background: #23863644; color: var(--green); }
+    .st-failed { background: #f8514944; color: #f85149; }
+    .st-away { background: #484f58; color: #8b949e; }
+    .st-home { background: #23863633; color: #3fb950; }
+    .pulse-dot {
+      position: absolute; top: 0.5rem; right: 0.5rem; width: 10px; height: 10px; border-radius: 50%;
+      background: #30363d; transition: background 0.2s;
+    }
+    .pulse-dot.active { background: var(--accent); animation: pulse 1s ease-out 1; }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(88, 166, 255, 0.7); }
+      100% { box-shadow: 0 0 0 12px rgba(88, 166, 255, 0); }
+    }
+    .card-detail { font-size: 0.75rem; color: var(--muted); line-height: 1.35; margin-top: 0.35rem; }
+    #floorWrap { flex: 1; min-height: 200px; padding: 0.5rem; background: #0d1117; }
+    #floorWrap svg { width: 100%; height: 100%; max-height: 42vh; }
+    .room { fill: #21262d; stroke: #30363d; stroke-width: 2; }
+    .room-label { fill: var(--muted); font-size: 11px; }
+    .thermo-circle { stroke: #fff; stroke-width: 2; }
+    .dw-rect { rx: 4; }
+    .light-dot { stroke: #30363d; stroke-width: 1; }
+    .person-dot { stroke: #fff; stroke-width: 2; }
+    .negot-line { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; fill: none; animation: dash 0.8s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset: -20; } }
+    #feed {
+      flex: 0 0 38%; min-height: 120px; border-top: 1px solid #30363d; overflow-y: auto; padding: 0.35rem;
+      background: #0d1117; font-size: 0.72rem;
+    }
+    .feed-row {
+      padding: 0.35rem 0.45rem; margin-bottom: 0.25rem; background: var(--panel); border-radius: 4px;
+      border-left: 3px solid #30363d; animation: fadeIn 0.35s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+    .feed-row .time { color: var(--muted); }
+    .pill { display: inline-block; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.65rem; margin: 0 0.2rem; }
+    .metrics-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; margin-bottom: 0.5rem; }
+    .metric-card { background: var(--panel); border-radius: 6px; padding: 0.45rem; text-align: center; border: 1px solid #30363d; }
+    .metric-card .v { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
+    .metric-card .l { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; }
+    .chart-box { background: var(--panel); border-radius: 8px; padding: 0.5rem; margin-bottom: 0.5rem; border: 1px solid #30363d; height: 220px; position: relative; }
+    .chart-box.tall { height: 180px; }
+    #modal {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 100; align-items: center; justify-content: center;
+    }
+    #modal.open { display: flex; }
+    #modal .box {
+      background: var(--panel); padding: 1.5rem; border-radius: 10px; max-width: 520px; max-height: 85vh; overflow-y: auto;
+      border: 1px solid #30363d;
+    }
+    #modal pre { font-size: 0.75rem; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div id="topbar">
+    <h1>HALO</h1>
+    <label>Scenario
+      <select id="scenario">
+        <option value="temperature_conflict">Temperature Conflict</option>
+        <option value="carbon_spike">Carbon Spike</option>
+        <option value="device_failure">Device Failure</option>
+      </select>
+    </label>
+    <label>Days <input type="number" id="days" value="14" min="1" max="365" style="width:4rem" /></label>
+    <label>Seed <input type="number" id="seed" value="42" style="width:5rem" /></label>
+    <button type="button" id="run">Run</button>
+    <button type="button" id="stop">Stop</button>
+    <span id="simTime">Sim: —:—</span>
+    <span id="speedNote">Events are buffered and rendered every 100ms so bursts do not freeze the UI.</span>
+  </div>
+  <div id="layout">
+    <div id="colLeft"></div>
+    <div id="colMid">
+      <div id="floorWrap"></div>
+      <div id="feed"></div>
+    </div>
+    <div id="colRight">
+      <div class="metrics-row">
+        <div class="metric-card"><div class="l">Negotiations</div><div class="v" id="mNeg">0</div></div>
+        <div class="metric-card"><div class="l">Convergence %</div><div class="v" id="mConv">—</div></div>
+        <div class="metric-card"><div class="l">Mean satisfaction</div><div class="v" id="mSat">—</div></div>
+        <div class="metric-card"><div class="l">Carbon (latest)</div><div class="v" id="mCarb">—</div></div>
+      </div>
+      <div class="chart-box"><canvas id="chartLine"></canvas></div>
+      <div class="chart-box tall"><canvas id="chartBar"></canvas></div>
+    </div>
+  </div>
+  <div id="modal">
+    <div class="box">
+      <h2 style="margin-top:0">Run complete</h2>
+      <pre id="modalBody"></pre>
+      <button type="button" id="modalAgain">Run again</button>
+    </div>
+  </div>
+  <script>
+    const MIN_PER_DAY = 1440;
+    const AGENTS = [
+      { id: 'person_alice', name: 'Alice', type: 'person', role: 'alice' },
+      { id: 'person_bob', name: 'Bob', type: 'person', role: 'bob' },
+      { id: 'device_thermostat', name: 'Thermostat', type: 'device', role: 'thermostat' },
+      { id: 'device_dishwasher', name: 'Dishwasher', type: 'device', role: 'dishwasher' },
+      { id: 'specialist_carbon', name: 'Grid Carbon', type: 'specialist', role: 'carbon' },
+      { id: 'specialist_weather', name: 'Weather', type: 'specialist', role: 'weather' },
+    ];
+    const SCENARIO_AGENTS = {
+      temperature_conflict: ['person_alice','person_bob','device_thermostat','specialist_carbon','specialist_weather'],
+      carbon_spike: ['person_alice','person_bob','device_thermostat','device_dishwasher','specialist_carbon'],
+      device_failure: ['person_alice','person_bob','device_thermostat','device_shower','specialist_carbon','specialist_weather'],
+    };
+
+    const state = {
+      agents: Object.fromEntries(AGENTS.map(a => [a.id, {
+        status: 'idle', detail: '—', pulse: false,
+      }])),
+      alice: { home: true, x: 180, y: 140, pref: 22 },
+      bob: { home: true, x: 220, y: 140, pref: 19 },
+      thermo: { setpoint: 20, device_state: 'idle' },
+      dishwasher: { state: 'idle' },
+      carbon: { value: null, level: '—' },
+      weather: { temp: null },
+      shower: { state: 'idle' },
+      negotiationLine: null,
+      metrics: { neg: 0, convSum: 0, convN: 0, satSum: 0, satN: 0 },
+      currentScenario: 'temperature_conflict',
+    };
+
+    function fmtTime(mins) {
+      const m = Math.floor(mins % MIN_PER_DAY);
+      const h = Math.floor(m / 60);
+      const mm = m % 60;
+      return String(h).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+    }
+
+    function buildLeftColumn() {
+      const el = document.getElementById('colLeft');
+      el.innerHTML = '';
+      const allowed = new Set(SCENARIO_AGENTS[state.currentScenario] || []);
+      for (const a of AGENTS) {
+        if (a.role === 'dishwasher' && !allowed.has('device_dishwasher')) continue;
+        if (a.role === 'weather' && !allowed.has('specialist_weather')) continue;
+        const card = document.createElement('div');
+        card.className = 'agent-card';
+        card.dataset.agentId = a.id;
+        card.innerHTML = `
+          <div class="pulse-dot" data-pulse></div>
+          <h3>${a.name} <span class="badge ${a.type}">${a.type}</span></h3>
+          <div class="status-badge st-idle" data-status>idle</div>
+          <div class="card-detail" data-detail>—</div>`;
+        el.appendChild(card);
+      }
+      // device_failure adds shower — not in AGENTS list; inject card
+      if (allowed.has('device_shower')) {
+        const card = document.createElement('div');
+        card.className = 'agent-card';
+        card.dataset.agentId = 'device_shower';
+        card.innerHTML = `
+          <div class="pulse-dot" data-pulse></div>
+          <h3>Shower <span class="badge device">device</span></h3>
+          <div class="status-badge st-idle" data-status>idle</div>
+          <div class="card-detail" data-detail>—</div>`;
+        el.appendChild(card);
+      }
+    }
+
+    function setAgentCard(id, statusClass, statusText, detail) {
+      const card = document.querySelector(`[data-agent-id="${id}"]`);
+      if (!card) return;
+      const st = card.querySelector('[data-status]');
+      st.className = 'status-badge ' + statusClass;
+      st.textContent = statusText;
+      card.querySelector('[data-detail]').textContent = detail;
+    }
+
+    function pulseAgent(id) {
+      const card = document.querySelector(`[data-agent-id="${id}"]`);
+      if (!card) return;
+      const d = card.querySelector('[data-pulse]');
+      d.classList.remove('active');
+      void d.offsetWidth;
+      d.classList.add('active');
+      setTimeout(() => d.classList.remove('active'), 1000);
+    }
+
+    function buildFloorSvg() {
+      const w = 400, h = 280;
+      return `
+<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+  <rect class="room" x="20" y="100" width="200" height="120" />
+  <text class="room-label" x="110" y="165" text-anchor="middle">Living Room</text>
+  <rect class="room" x="230" y="100" width="150" height="120" />
+  <text class="room-label" x="305" y="165" text-anchor="middle">Kitchen</text>
+  <rect class="room" x="20" y="20" width="90" height="70" />
+  <text class="room-label" x="65" y="58" text-anchor="middle" font-size="9">Bed Alice</text>
+  <rect class="room" x="120" y="20" width="90" height="70" />
+  <text class="room-label" x="165" y="52" text-anchor="middle" font-size="9">Bathroom</text>
+  <rect class="room" x="220" y="20" width="90" height="70" />
+  <text class="room-label" x="265" y="58" text-anchor="middle" font-size="9">Bed Bob</text>
+  <circle id="thermoIcon" class="thermo-circle" cx="120" cy="150" r="22" fill="#3a5a78"/>
+  <text id="thermoText" x="120" y="155" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">20</text>
+  <rect id="dwRect" class="dw-rect" x="270" y="130" width="70" height="40" fill="#484f58" />
+  <text x="305" y="154" text-anchor="middle" fill="#8b949e" font-size="9">DW</text>
+  <circle id="lightLR" class="light-dot" cx="100" cy="130" r="6" fill="#484f58"/>
+  <circle id="lightK" class="light-dot" cx="300" cy="130" r="6" fill="#484f58"/>
+  <path id="showerIcon" d="M165 45 Q165 60 175 55 Q170 40 165 45" fill="#58a6ff" opacity="0.4" style="display:none"/>
+  <circle id="dotAlice" class="person-dot" cx="180" cy="140" r="10" fill="#f78166"/>
+  <text x="180" y="144" text-anchor="middle" fill="#fff" font-size="8">A</text>
+  <circle id="dotBob" class="person-dot" cx="220" cy="140" r="10" fill="#79c0ff"/>
+  <text x="220" y="144" text-anchor="middle" fill="#fff" font-size="8">B</text>
+  <line id="negLine" class="negot-line" x1="0" y1="0" x2="0" y2="0" style="display:none"/>
+</svg>`;
+    }
+
+    function updateFloor() {
+      document.getElementById('floorWrap').innerHTML = buildFloorSvg();
+      const th = document.getElementById('thermoIcon');
+      const tv = document.getElementById('thermoText');
+      const sp = state.thermo.setpoint;
+      const t = (sp - 14) / (28 - 14);
+      const r = Math.round(58 + t * (248 - 58));
+      const b = Math.round(166 + t * (88 - 166));
+      const col = `rgb(${r},${Math.round((b+r)/4)},${b})`;
+      th.setAttribute('fill', col);
+      tv.textContent = String(Math.round(sp * 10) / 10);
+
+      const dw = document.getElementById('dwRect');
+      const hasDw = SCENARIO_AGENTS[state.currentScenario].includes('device_dishwasher');
+      dw.style.display = hasDw ? '' : 'none';
+      if (hasDw) {
+        if (state.dishwasher.state === 'running') { dw.setAttribute('fill', '#388bfd'); }
+        else if (state.dishwasher.state === 'scheduled') { dw.setAttribute('fill', '#d29922'); }
+        else { dw.setAttribute('fill', '#484f58'); }
+      }
+
+      const lr = state.alice.home || state.bob.home;
+      document.getElementById('lightLR').setAttribute('fill', lr ? '#f0e060' : '#484f58');
+      document.getElementById('lightK').setAttribute('fill', state.bob.home ? '#f0e060' : '#484f58');
+
+      const showShower = SCENARIO_AGENTS[state.currentScenario].includes('device_shower');
+      document.getElementById('showerIcon').style.display = showShower ? 'block' : 'none';
+
+      const da = document.getElementById('dotAlice');
+      if (state.alice.home) {
+        da.setAttribute('opacity', '1');
+        da.setAttribute('cx', state.alice.x);
+        da.setAttribute('cy', state.alice.y);
+      } else {
+        da.setAttribute('opacity', '0.25');
+      }
+      const db = document.getElementById('dotBob');
+      const bobEvening = (state.bob._minuteOfDay != null && state.bob._minuteOfDay >= 17 * 60);
+      db.setAttribute('cx', bobEvening ? 300 : 220);
+      db.setAttribute('cy', bobEvening ? 150 : 140);
+      db.setAttribute('opacity', state.bob.home ? '1' : '0.25');
+
+      const nl = document.getElementById('negLine');
+      if (state.negotiationLine) {
+        nl.style.display = '';
+        nl.setAttribute('x1', state.negotiationLine.x1);
+        nl.setAttribute('y1', state.negotiationLine.y1);
+        nl.setAttribute('x2', state.negotiationLine.x2);
+        nl.setAttribute('y2', state.negotiationLine.y2);
+      } else {
+        nl.style.display = 'none';
+      }
+    }
+
+    const feedEl = document.getElementById('feed');
+    function pushFeed(msg, desc, type) {
+      const row = document.createElement('div');
+      row.className = 'feed-row';
+      const colors = {
+        PreferenceDeclaration: '#3fb950',
+        NegotiationProposal: '#58a6ff',
+        NegotiationResolved: '#a371f7',
+        CarbonIntensityUpdate: '#79c0ff',
+        DeviceFailureNotice: '#f85149',
+        default: '#8b949e',
+      };
+      const c = colors[type] || colors.default;
+      row.style.borderLeftColor = c;
+      row.innerHTML = `<span class="time">${fmtTime(msg.timestamp)}</span> · <strong>${msg.sender}</strong> → ${msg.recipient} · <span class="pill" style="background:${c}33">${type}</span> ${desc || ''}`;
+      feedEl.insertBefore(row, feedEl.firstChild);
+      while (feedEl.children.length > 200) feedEl.removeChild(feedEl.lastChild);
+    }
+
+    const eventQueue = [];
+    let evtSource = null;
+
+    function enqueue(kind, data) {
+      eventQueue.push({ kind, data });
+    }
+
+    let chartLine, chartBar;
+    const lineData = { labels: [], setpoint: [], alice: [], bob: [] };
+    const barData = { labels: [], iters: [], colors: [] };
+
+    function initCharts() {
+      const ctxL = document.getElementById('chartLine').getContext('2d');
+      chartLine = new Chart(ctxL, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            { label: 'Setpoint', data: [], borderColor: '#8b949e', tension: 0.2, pointRadius: 2 },
+            { label: 'Alice pref', data: [], borderColor: '#f78166', tension: 0.2, pointRadius: 2 },
+            { label: 'Bob pref', data: [], borderColor: '#79c0ff', tension: 0.2, pointRadius: 2 },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { maxRotation: 45, font: { size: 9 } } },
+            y: { title: { display: true, text: '°C' } },
+          },
+          plugins: { legend: { labels: { boxWidth: 10, font: { size: 10 } } } },
+        },
+      });
+      const ctxB = document.getElementById('chartBar').getContext('2d');
+      chartBar = new Chart(ctxB, {
+        type: 'bar',
+        data: { labels: [], datasets: [{ label: 'Iterations', data: [], backgroundColor: [] }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true, title: { display: true, text: 'Iterations' } } },
+          plugins: { legend: { display: false } },
+        },
+      });
+    }
+
+    function processOneEvent(kind, data) {
+      if (kind === 'message') {
+        document.getElementById('simTime').textContent = 'Sim: ' + fmtTime(data.timestamp);
+        state.bob._minuteOfDay = data.timestamp % MIN_PER_DAY;
+        pushFeed(data, data.description, data.msg_type);
+        pulseAgent(data.sender);
+        if (data.recipient !== 'broadcast') pulseAgent(data.recipient);
+      }
+      if (kind === 'negotiation') {
+        state.metrics.neg++;
+        document.getElementById('mNeg').textContent = String(state.metrics.neg);
+        if (data.converged) {
+          state.metrics.convSum++;
+          state.metrics.convN++;
+        }
+        const cr = state.metrics.convN ? (state.metrics.convSum / state.metrics.convN * 100) : 0;
+        document.getElementById('mConv').textContent = cr.toFixed(1) + '%';
+        const sats = Object.values(data.satisfaction_scores || {});
+        if (sats.length) {
+          const m = sats.reduce((a,b)=>a+b,0)/sats.length;
+          state.metrics.satSum += m;
+          state.metrics.satN++;
+          document.getElementById('mSat').textContent = (state.metrics.satSum / state.metrics.satN).toFixed(3);
+        }
+        state.thermo.setpoint = data.final_value;
+        state.negotiationLine = { x1: 180, y1: 140, x2: 120, y2: 150 };
+        setTimeout(() => { state.negotiationLine = null; updateFloor(); }, 800);
+        const prefs = data.participant_preferences || {};
+        const tlab = fmtTime(data.timestamp);
+        chartLine.data.labels.push(tlab);
+        chartLine.data.datasets[0].data.push(data.final_value);
+        chartLine.data.datasets[1].data.push(prefs.person_alice != null ? prefs.person_alice : null);
+        chartLine.data.datasets[2].data.push(prefs.person_bob != null ? prefs.person_bob : null);
+        chartLine.update('none');
+        const it = data.iterations;
+        let col = '#3fb950';
+        if (it > 7) col = '#f85149';
+        else if (it > 3) col = '#d29922';
+        chartBar.data.labels.push('#' + state.metrics.neg);
+        chartBar.data.datasets[0].data.push(it);
+        chartBar.data.datasets[0].backgroundColor.push(col);
+        chartBar.update('none');
+        updateFloor();
+        setAgentCard('device_thermostat', 'st-resolved', 'resolved', data.final_value.toFixed(1) + '°C setpoint');
+      }
+      if (kind === 'failure') {
+        setAgentCard(data.device_id, 'st-failed', 'failed', 'recovery: ' + (data.recovery_succeeded ? 'ok' : 'pending'));
+      }
+      if (kind === 'learning') {
+        const pid = data.person_id;
+        const txt = `EMA ${data.ema_value.toFixed(2)} | μ=${data.bayesian_mu.toFixed(2)} σ=${data.bayesian_sigma.toFixed(2)}`;
+        setAgentCard(pid, 'st-home', data.routine_stable ? 'stable routine' : 'learning', txt);
+      }
+      if (kind === 'agent_state') {
+        const id = data.agent_id;
+        const v = data.state_value;
+        if (data.state_key === 'presence') {
+          if (id === 'person_alice') {
+            state.alice.home = v === 'home';
+            setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', v, state.alice.pref + '°C preferred');
+          }
+          if (id === 'person_bob') {
+            state.bob.home = v === 'home';
+            setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', v, state.bob.pref + '°C preferred');
+          }
+        }
+        if (data.state_key === 'preferred_temperature' && typeof v === 'number') {
+          if (id === 'person_alice') { state.alice.pref = v; setAgentCard(id, 'st-home', 'home', v + '°C preferred | ' + (state.alice.home ? 'home' : 'away')); }
+          if (id === 'person_bob') { state.bob.pref = v; setAgentCard(id, 'st-home', 'home', v + '°C preferred | ' + (state.bob.home ? 'home' : 'away')); }
+        }
+        if (data.state_key === 'device_state') {
+          if (id === 'device_thermostat') {
+            state.thermo.device_state = v;
+            const map = { negotiating: ['st-negotiating','negotiating'], resolved: ['st-resolved','resolved'], idle: ['st-idle','idle'], failed: ['st-failed','failed'] };
+            const m = map[v] || ['st-idle', v];
+            setAgentCard(id, m[0], m[1], state.thermo.setpoint.toFixed(1) + '°C setpoint');
+          }
+          if (id === 'device_dishwasher') {
+            state.dishwasher.state = v === 'running' ? 'running' : v === 'scheduled' ? 'scheduled' : 'idle';
+            setAgentCard(id, 'st-idle', state.dishwasher.state, '—');
+          }
+        }
+        if (data.state_key === 'target_temp' && typeof v === 'number' && id === 'device_thermostat') {
+          state.thermo.setpoint = v;
+          setAgentCard('device_thermostat', 'st-idle', 'idle', v.toFixed(1) + '°C setpoint');
+        }
+        if (data.state_key === 'outdoor_temp' && id === 'specialist_weather' && typeof v === 'number') {
+          state.weather.temp = v;
+          setAgentCard('specialist_weather', 'st-home', 'live', v.toFixed(1) + '°C outdoor');
+        }
+        updateFloor();
+      }
+      if (kind === 'carbon') {
+        state.carbon.value = data.value;
+        state.carbon.level = data.level;
+        document.getElementById('mCarb').textContent = Math.round(data.value) + ' · ' + data.level;
+        setAgentCard('specialist_carbon', 'st-home', data.level, Math.round(data.value) + ' gCO2/kWh — ' + data.level);
+      }
+    }
+
+    setInterval(() => {
+      if (eventQueue.length === 0) return;
+      const ev = eventQueue.shift();
+      processOneEvent(ev.kind, ev.data);
+    }, 100);
+
+    function resetMetrics() {
+      state.metrics = { neg: 0, convSum: 0, convN: 0, satSum: 0, satN: 0 };
+      document.getElementById('mNeg').textContent = '0';
+      document.getElementById('mConv').textContent = '—';
+      document.getElementById('mSat').textContent = '—';
+      document.getElementById('mCarb').textContent = '—';
+      feedEl.innerHTML = '';
+      chartLine.data.labels = [];
+      chartLine.data.datasets.forEach(d => d.data = []);
+      chartLine.update('none');
+      chartBar.data.labels = [];
+      chartBar.data.datasets[0].data = [];
+      chartBar.data.datasets[0].backgroundColor = [];
+      chartBar.update('none');
+    }
+
+    function startStream() {
+      if (evtSource) { evtSource.close(); evtSource = null; }
+      resetMetrics();
+      const scenario = document.getElementById('scenario').value;
+      const days = document.getElementById('days').value;
+      const seed = document.getElementById('seed').value;
+      state.currentScenario = scenario;
+      buildLeftColumn();
+      updateFloor();
+
+      const url = `/stream?scenario=${encodeURIComponent(scenario)}&days=${encodeURIComponent(days)}&seed=${encodeURIComponent(seed)}`;
+      evtSource = new EventSource(url);
+
+      evtSource.addEventListener('message', e => enqueue('message', JSON.parse(e.data)));
+      evtSource.addEventListener('negotiation', e => enqueue('negotiation', JSON.parse(e.data)));
+      evtSource.addEventListener('failure', e => enqueue('failure', JSON.parse(e.data)));
+      evtSource.addEventListener('learning', e => enqueue('learning', JSON.parse(e.data)));
+      evtSource.addEventListener('agent_state', e => enqueue('agent_state', JSON.parse(e.data)));
+      evtSource.addEventListener('carbon', e => enqueue('carbon', JSON.parse(e.data)));
+      evtSource.addEventListener('learning', e => enqueue('learning', JSON.parse(e.data)));
+      evtSource.addEventListener('done', e => {
+        const summary = JSON.parse(e.data);
+        document.getElementById('modalBody').textContent = JSON.stringify(summary, null, 2);
+        document.getElementById('modal').classList.add('open');
+        evtSource.close();
+        evtSource = null;
+      });
+      evtSource.addEventListener('error', e => {
+        if (e instanceof MessageEvent && e.data) {
+          try {
+            const d = JSON.parse(e.data);
+            alert('Simulation error:\n' + (d.traceback || ''));
+          } catch (_) {}
+          evtSource.close();
+          evtSource = null;
+        }
+      });
+    }
+
+    document.getElementById('run').addEventListener('click', startStream);
+    document.getElementById('stop').addEventListener('click', () => {
+      if (evtSource) { evtSource.close(); evtSource = null; }
+    });
+    document.getElementById('modalAgain').addEventListener('click', () => {
+      document.getElementById('modal').classList.remove('open');
+      startStream();
+    });
+
+    document.getElementById('scenario').addEventListener('change', e => {
+      state.currentScenario = e.target.value;
+      buildLeftColumn();
+      updateFloor();
+    });
+
+    initCharts();
+    buildLeftColumn();
+    updateFloor();
+  </script>
+</body>
+</html>

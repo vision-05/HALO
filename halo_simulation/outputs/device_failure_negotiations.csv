@@ -1,0 +1,3 @@
+timestamp,scenario,device_id,participants,iterations,converged,final_value,carbon_intensity,fallback_used,satisfaction_person_alice,satisfaction_person_bob,preference_person_alice,preference_person_bob
+446.99861074081343,device_failure,device_thermostat,"person_alice,person_bob",1,True,20.377358490566035,292.5367631261683,False,0.9555256064690025,0.9730458221024261,21.0,20.0
+1848.9053776677993,device_failure,device_thermostat,"person_alice,person_bob",1,True,20.377358490566035,298.5003252993084,False,0.9555256064690025,0.9730458221024261,21.0,20.0
