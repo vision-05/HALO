@@ -1,0 +1,10 @@
+services:
+  language:
+    build:
+      context: ./
+      dockerfile: language/Dockerfile
+    container_name: halo-language
+    network_mode: host
+    environment:
+      - CLAUDE_KEY
+      
