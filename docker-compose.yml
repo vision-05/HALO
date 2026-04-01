@@ -1,0 +1,18 @@
+services:
+  language:
+    build:
+      context: ./agents/language
+      dockerfile: agents/language/Dockerfile
+    container_name: halo-language
+    network_mode: host
+    environment:
+      - CLAUDE_KEY
+
+  docs:
+    image: squidfunk/mkdocs-material:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/docs
+    command: serve -a 0.0.0.0:8000
+      

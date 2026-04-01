@@ -1,0 +1,6 @@
+site_name: HALO
+theme:
+  name: material
+plugins:
+  - search
+  - mkdocstring
