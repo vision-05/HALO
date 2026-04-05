@@ -3,4 +3,4 @@ theme:
   name: material
 plugins:
   - search
-  - mkdocstring
+  - mkdocstrings

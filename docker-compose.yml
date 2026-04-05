@@ -1,15 +1,30 @@
 services:
   language:
     build:
-      context: ./agents/language
-      dockerfile: agents/language/Dockerfile
+      context: ./agents/language/
+      target: prod
     container_name: halo-language
     network_mode: host
     environment:
       - CLAUDE_KEY
+    restart: unless-stopped
+
+  language-test:
+    build:
+      context: ./agents/language/
+      target: test
+    container_name: halo-language-test
+    environment:
+      - CLAUDE_key
+    volumes:
+      - ./agents/language/src:/app/src
+      - ./agents/language/test:/app/test
 
   docs:
-    image: squidfunk/mkdocs-material:latest
+    build:
+      context: .
+      dockerfile: docs/Dockerfile
+    container_name: halo-docs
     ports:
       - "8000:8000"
     volumes:
