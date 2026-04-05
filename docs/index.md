@@ -1,3 +1,3 @@
-# Everything is here
+# HALO
 
-Information etc
+Holistic Agentic Living Orchestration

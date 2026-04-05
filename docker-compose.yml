@@ -20,6 +20,38 @@ services:
       - ./agents/language/src:/app/src
       - ./agents/language/test:/app/test
 
+  generic:
+    build:
+      context: ./agents/generic/
+      target: prod
+    container_name: halo-generic
+    network_mode: host
+  
+  generic-test:
+    build:
+      context: ./agents/generic/
+      target: test
+    container_name: halo-generic-test
+    volumes:
+      - ./agents/generic/src:/app/src
+      - ./agents/generic/test:/app/test
+
+  bootstrap:
+    build:
+      context: ./agents/bootstrap
+      target: prod
+    container_name: halo-bootstrap
+    network_mode: host
+  
+  bootstrap-test:
+    build:
+      context: ./agents/bootstrap
+      target: test
+    container_name: halo-bootstrap-test
+    volumes:
+      - ./agents/bootstrap/src:/app/src
+      - ./agents/bootstrap/test:/app/test
+
   docs:
     build:
       context: .
@@ -27,7 +59,7 @@ services:
     container_name: halo-docs
     ports:
       - "8000:8000"
-    volumes:
-      - .:/docs
     command: serve -a 0.0.0.0:8000
+    volumes:
+      - ./:/docs
       
