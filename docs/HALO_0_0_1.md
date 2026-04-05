@@ -18,15 +18,16 @@ The network usually learns on its own, but the semantic agents allow for fast-fo
 Generic agents are built using the ZeroMQ sockets framework. This abstracts away the transport layer level of networking and leaves us with sockets and different network patterns.
 
 The lifecycle of a HALO network is broken down into the following sections:
- - Network startup
- - Agent startup
- - Agent discovery
- - Agent verification
- - Heartbeat
- - Message passing
- - Negotiation
- - Agent cleanup
- - Agent spawning
+
+- Network startup
+- Agent startup
+- Agent discovery
+- Agent verification
+- Heartbeat
+- Message passing
+- Negotiation
+- Agent cleanup
+- Agent spawning
 
 ### Network startup
 A new HALO network is initialised. A dedicated HALO initialisation agent is run on a laptop or desktop PC. This generates a UUID for the network, a root ed25519 keypair (for encryption) and an initial Recognised Device Table, which has those two items as the first entry. Any agent that has the public key for the root can be written to the Recognised Device Table, where its own public key and uuid will be written.

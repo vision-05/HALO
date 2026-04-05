@@ -52,6 +52,15 @@ services:
       - ./agents/bootstrap/src:/app/src
       - ./agents/bootstrap/test:/app/test
 
+  discovery-test:
+    build:
+      context: ./agents/discovery
+      target: test
+    container_name: halo-discovery-test
+    volumes:
+      - ./agents/discovery/src:/app/src
+      - ./agents/discovery/test:/app/test
+
   docs:
     build:
       context: .
