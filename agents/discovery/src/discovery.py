@@ -1,6 +1,19 @@
 import asyncio
+import socket
 from zeroconf import IPVersion, ServiceStateChange
 from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf, AsyncServiceBrowser
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect("8.8.8.8", 80)
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        s.close()
+    return ip
+
 
 class HaloServiceListener:
     def __init__(self, on_discovered_callback, on_lost_callback):
@@ -35,13 +48,36 @@ class Discovery:
         self.active_peers = {}
 
     async def start(self):
-        pass
+        await self.aiozc.register_service(self.my_info)
+
+        listener = HaloServiceListener(self._handle_new_peer, self._handle_lost_peer)
+
+        self.browser = AsyncServiceBrowser(self.aiozc, self.service_type, listener)
 
     def _handle_new_peer(self, zc, type_, name):
-        pass
+        if name == self.my_info.name:
+            return
+        
+        info = self.aiozc.get_service_info(type_, name)
+        if info:
+            ip = socket.inet_ntoa(info.addresses[0])
+            port = info.port
+            role = info.properties.get(b"role", b"").decode("utf-8")
+
+            peer_data = {"ip": ip, "port": port, "role": role}
+
+            self.active_peers[name] = peer_data        
+            self.new_peer_callback(name, peer_data)
+        print(f"Added {name}")
 
     def _handle_lost_peer(self, name):
-        pass
+        if name in self.active_peers:
+            del self.active_peers[name]
+            print(f"Lost {name}")
 
     async def stop(self):
-        pass
+        if self.browser:
+            await self.browser.async_cancel()
+        await self.aiozc.async_unregister_service(self.my_info)
+        await self.aiozc.async_close()
+

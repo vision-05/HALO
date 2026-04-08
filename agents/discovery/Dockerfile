@@ -11,18 +11,20 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+FROM builder as test-builder
+
+COPY requirements-test.txt .
+RUN pip install --no-cache-dir -r requirements-test.txt
+
 FROM ubuntu/python:3.10-22.04_stable AS base
 
-COPY --from=builder /opt/venv /opt/venv
+COPY --from=test-builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-
+ENV PYTHONPATH="/app"
 
 WORKDIR /app
 
 FROM base as test
-
-COPY requirements-test.txt .
-RUN pip install --no-cache-dir -r requirements-test.txt
 
 COPY src/ ./src/
 COPY test/ ./test/

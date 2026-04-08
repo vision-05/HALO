@@ -63,6 +63,6 @@ When other agents detect the mDNS broadcast of a new agent, one will prompt the 
 ## Actuator agents
 
 ## Semantic agents
-
+Requests trigger RL rewards.
 
 
