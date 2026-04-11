@@ -1,0 +1,4 @@
+zmq
+zeroconf
+pytest
+pytest-asyncio

@@ -7,13 +7,13 @@ RUN apt-get update && \
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements.txt .
+COPY discovery/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
 FROM builder as test-builder
 
-COPY requirements-test.txt .
+COPY discovery/requirements-test.txt .
 RUN pip install --no-cache-dir -r requirements-test.txt
 
 FROM ubuntu/python:3.10-22.04_stable AS base
@@ -26,8 +26,8 @@ WORKDIR /app
 
 FROM base as test
 
-COPY src/ ./src/
-COPY test/ ./test/
+COPY discovery/src/ .discovery/src/
+COPY discovery/test/ .discovery/test/
 
 
-ENTRYPOINT ["pytest", "-s", "test/"]
+ENTRYPOINT ["pytest", "-s", "discovery/test/"]

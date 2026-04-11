@@ -1,7 +1,8 @@
 services:
   language:
     build:
-      context: ./agents/language/
+      context: ./agents
+      dockerfile: language/Dockerfile
       target: prod
     container_name: halo-language
     network_mode: host
@@ -11,7 +12,8 @@ services:
 
   language-test:
     build:
-      context: ./agents/language/
+      context: ./agents
+      dockerfile: language/Dockerfile
       target: test
     container_name: halo-language-test
     environment:
@@ -22,14 +24,16 @@ services:
 
   generic:
     build:
-      context: ./agents/generic/
+      context: ./agents
+      dockerfile: generic/Dockerfile
       target: prod
     container_name: halo-generic
     network_mode: host
   
   generic-test:
     build:
-      context: ./agents/generic/
+      context: ./agents
+      dockerfile: generic/Dockerfile
       target: test
     container_name: halo-generic-test
     volumes:
@@ -38,23 +42,27 @@ services:
 
   bootstrap:
     build:
-      context: ./agents/bootstrap
+      context: ./agents
+      dockerfile: bootstrap/Dockerfile
       target: prod
     container_name: halo-bootstrap
     network_mode: host
   
   bootstrap-test:
     build:
-      context: ./agents/bootstrap
+      context: ./agents
+      dockerfile: bootstrap/Dockerfile
       target: test
     container_name: halo-bootstrap-test
     volumes:
-      - ./agents/bootstrap/src:/app/src
-      - ./agents/bootstrap/test:/app/test
+      - ./agents/bootstrap/src:/app/bootstrap/src
+      - ./agents/bootstrap/test:/app/bootstrap/test
+      - ./agents/discovery/src:/app/discovery/src
 
   discovery-test:
     build:
-      context: ./agents/discovery
+      context: ./agents
+      dockerfile: discovery/Dockerfile
       target: test
     container_name: halo-discovery-test
     volumes:

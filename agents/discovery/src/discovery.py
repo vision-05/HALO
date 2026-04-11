@@ -4,6 +4,8 @@ from zeroconf import IPVersion, ServiceStateChange
 from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf, AsyncServiceBrowser
 
 def get_local_ip():
+    """get_local_ip -> None
+    Function to get the local IP address on the network (not localhost)"""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))
@@ -16,6 +18,8 @@ def get_local_ip():
 
 
 class HaloServiceListener:
+    """HaloServiceListener
+       Standard listener that follows ZeroConf implementation"""
     def __init__(self, loop, on_discovered_callback, on_lost_callback):
         self.loop = loop
         self.on_discovered = on_discovered_callback
@@ -31,15 +35,17 @@ class HaloServiceListener:
         pass
 
 class Discovery:
-    def __init__(self, agent_name, agent_role, local_ip, zmq_port, new_peer_callback):
+    """Discovery"""
+    def __init__(self, agent_name, agent_role,  zmq_port, new_peer_callback):
         self.aiozc = AsyncZeroconf()
         self.browser = None
         self.service_type = "_halo._tcp.local."
+        self.local_ip = get_local_ip()
 
         self.my_info = AsyncServiceInfo(
             self.service_type,
             f"{agent_name}.{self.service_type}",
-            addresses=[socket.inet_aton(local_ip)],
+            addresses=[socket.inet_aton(self.local_ip)],
             port=zmq_port,
             properties={"role": agent_role},
             server=f"{agent_name}.local.",

@@ -1,6 +1,6 @@
 import zmq
 import zmq.asyncio
-from src.discovery import HaloServiceListener, Discovery, get_local_ip
+from src.discovery import HaloServiceListener, Discovery
 import time
 import pytest
 import asyncio
@@ -32,9 +32,9 @@ async def test_discovery():
         if len(peers) == 6:
             peer_found_event.set()
 
-    s1 = Discovery('test', 'Admin', get_local_ip(), zport, new_peer_callback=verify_peer)
-    s2 = Discovery('test1', 'Admin', get_local_ip(), zport1, new_peer_callback=verify_peer)
-    s3 = Discovery('test2', 'Admin', get_local_ip(), zport2, new_peer_callback=verify_peer)
+    s1 = Discovery('test', 'Admin', zport, new_peer_callback=verify_peer)
+    s2 = Discovery('test1', 'Admin', zport1, new_peer_callback=verify_peer)
+    s3 = Discovery('test2', 'Admin', zport2, new_peer_callback=verify_peer)
 
     await s1.start()
     await s2.start()
