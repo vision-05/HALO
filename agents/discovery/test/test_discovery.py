@@ -1,6 +1,7 @@
 import zmq
 import zmq.asyncio
-from src.discovery import HaloServiceListener, Discovery
+from discovery.src.discovery import HaloServiceListener, Discovery
+from discovery.src.base_agent import BaseAgent
 import time
 import pytest
 import asyncio
@@ -50,3 +51,26 @@ async def test_discovery():
         await s3.stop()
     
     assert len(peers) == 6
+
+@pytest.mark.asyncio
+async def test_base_discovery():
+    a1 = BaseAgent("B1", "Boot")
+    a2 = BaseAgent("B2", "Client")
+
+    await asyncio.gather(a1.broadcast_and_discover(), a2.broadcast_and_discover())
+
+    assert len(a1.peers) == len(a2.peers)
+
+@pytest.mark.asyncio
+async def test_base_messaging():
+    a1 = BaseAgent("A1", "Admin")
+    a2 = BaseAgent("A2", "Admin")
+
+    await asyncio.gather(a1.broadcast_and_discover(), a2.broadcast_and_discover())
+
+    asyncio.create_task(a1.recv_msg())
+    asyncio.create_task(a2.recv_msg())
+
+    await a1.send_msg("A2", b"Hello from A1")
+
+    await asyncio.sleep(1.0)

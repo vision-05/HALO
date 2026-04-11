@@ -66,8 +66,8 @@ services:
       target: test
     container_name: halo-discovery-test
     volumes:
-      - ./agents/discovery/src:/app/src
-      - ./agents/discovery/test:/app/test
+      - ./agents/discovery/src:/app/discovery/src
+      - ./agents/discovery/test:/app/discovery/test
 
   docs:
     build:
