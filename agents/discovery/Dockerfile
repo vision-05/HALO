@@ -30,4 +30,4 @@ COPY src/ ./src/
 COPY test/ ./test/
 
 
-ENTRYPOINT ["pytest", "test/"]
+ENTRYPOINT ["pytest", "-s", "test/"]

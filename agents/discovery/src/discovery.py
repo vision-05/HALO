@@ -6,7 +6,7 @@ from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf, AsyncServiceBrowse
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect("8.8.8.8", 80)
+        s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
     except Exception:
         ip = "127.0.0.1"
@@ -16,15 +16,16 @@ def get_local_ip():
 
 
 class HaloServiceListener:
-    def __init__(self, on_discovered_callback, on_lost_callback):
+    def __init__(self, loop, on_discovered_callback, on_lost_callback):
+        self.loop = loop
         self.on_discovered = on_discovered_callback
         self.on_lost = on_lost_callback
 
     def add_service(self, zc, type_, name):
-        self.on_discovered(zc, type_, name)
+        asyncio.run_coroutine_threadsafe(self.on_discovered(zc, type_, name), self.loop)
 
     def remove_service(self, zc, type_, name):
-        self.on_lost(zc, type_, name)
+        asyncio.run_coroutine_threadsafe(self.on_lost(zc, type_, name), self.loop)
 
     def update_service(self, zc, type_, name):
         pass
@@ -48,17 +49,19 @@ class Discovery:
         self.active_peers = {}
 
     async def start(self):
-        await self.aiozc.register_service(self.my_info)
+        await self.aiozc.async_register_service(self.my_info)
 
-        listener = HaloServiceListener(self._handle_new_peer, self._handle_lost_peer)
+        loop = asyncio.get_running_loop()
 
-        self.browser = AsyncServiceBrowser(self.aiozc, self.service_type, listener)
+        listener = HaloServiceListener(loop, self._handle_new_peer, self._handle_lost_peer)
 
-    def _handle_new_peer(self, zc, type_, name):
+        self.browser = AsyncServiceBrowser(self.aiozc.zeroconf, self.service_type, listener=listener)
+
+    async def _handle_new_peer(self, zc, type_, name):
         if name == self.my_info.name:
             return
         
-        info = self.aiozc.get_service_info(type_, name)
+        info = await self.aiozc.async_get_service_info(type_, name)
         if info:
             ip = socket.inet_ntoa(info.addresses[0])
             port = info.port
@@ -70,7 +73,7 @@ class Discovery:
             self.new_peer_callback(name, peer_data)
         print(f"Added {name}")
 
-    def _handle_lost_peer(self, name):
+    async def _handle_lost_peer(self, name):
         if name in self.active_peers:
             del self.active_peers[name]
             print(f"Lost {name}")
