@@ -31,3 +31,9 @@ COPY discovery/test/ .discovery/test/
 
 
 ENTRYPOINT ["pytest", "-s", "discovery/test/"]
+
+FROM base AS verify
+COPY discovery/src/ .discovery/src/
+
+
+ENTRYPOINT ["python", "discovery/src/verification.py"]

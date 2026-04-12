@@ -69,6 +69,17 @@ services:
       - ./agents/discovery/src:/app/discovery/src
       - ./agents/discovery/test:/app/discovery/test
 
+  discovery-verify:
+    build:
+      context: ./agents
+      dockerfile: discovery/Dockerfile
+      target: verify
+    container_name: halo-discovery
+    volumes:
+      - ./agents/discovery/src:/app/discovery/src
+    stdin_open: true
+    tty: true
+
   docs:
     build:
       context: .

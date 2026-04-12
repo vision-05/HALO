@@ -1,11 +1,16 @@
 import zmq.asyncio
 import zmq
-from discovery.src.discovery import Discovery
+from discovery import Discovery
 import asyncio
 import os
 
 class BaseAgent:
+    """Base Agent implementation"""
     def __init__(self, name, role):
+        """Generates/loads public/private key pair for this agent\n
+        Creates router socket (for receiving messages)\n
+        Binds to random port\n
+        Includes lambda callback for discovering new peers"""
         self.name = name
         self.role = role
 
@@ -19,37 +24,40 @@ class BaseAgent:
         self.port = self.router.bind_to_random_port("tcp://*")
         self.peers = {}
         self.outbound_socks = {}
+        self.pubkey_lookup = {}
 
         def verify_peer(peername, peerdata):
             clean_name = peername.split('.')[0]
             print(f"{self.name} discovered {peername} at {peerdata['ip']}:{peerdata['port']}")
+            acc_input = input(f"{self.name} Do you accept the connection to {clean_name}? [y/n] ")
+            if acc_input == "n":
+                return
+            print("Connecting...")
             self.peers[clean_name] = peerdata
             dealer = self.ctx.socket(zmq.DEALER)
             dealer.setsockopt_string(zmq.IDENTITY, self.name)
             dealer.curve_server = False
             dealer.curve_publickey = self.public_key
             dealer.curve_secretkey = self.secret_key
+            self.pubkey_lookup[clean_name] = peerdata['pubkey']
             dealer.curve_serverkey = peerdata['pubkey']
             dealer.connect(f"tcp://{peerdata['ip']}:{peerdata['port']}")
             self.outbound_socks[clean_name] = dealer
-            self.peer_found_event.set()
 
         self.service = Discovery(name, role, self.port, self.public_key, new_peer_callback=verify_peer)
         self.network_UUID = None
 
-        self.peer_found_event = asyncio.Event()
 
     async def broadcast_and_discover(self):
+        """Broadcast agent and wait 5 seconds to discover other agents\n
+        Stop broadcasting and discovering (change this later)"""
         await self.service.start()
 
-        try:
-            await asyncio.wait_for(self.peer_found_event.wait(), 5.0)
-        except asyncio.TimeoutError:
-            print("No agents detected in 5s")
-        finally:
-            await self.service.stop()
+    async def stop_broadcasting(self):
+        await self.service.stop()
 
     async def send_msg(self, dest, payload):
+        """Fetch the dealer corresponding to the destination agent and send the message"""
         dealer = self.outbound_socks.get(dest)
         if not dealer:
             return
@@ -58,15 +66,22 @@ class BaseAgent:
         print("Sent message")
 
     async def recv_msg(self):
+        """Receive messages from the network, running constantly for agent lifetime"""
         while True:
             frames = await self.router.recv_multipart()
             sender_id = frames[0].decode('utf-8')
+
+            if sender_id not in self.pubkey_lookup.keys():
+                print("Dropped unauthorised packet")
+                continue
 
             message_data = frames[1]
 
             print(f"{self.name} received {message_data} from {sender_id}")
 
     def gen_key(self, key_dir='./.keys'):
+        """Check whether public/private key pair already exists for this agent on disk\n
+        Loads keys if on disk, otherwise generates new pair and writes to file"""
         os.makedirs(key_dir, exist_ok=True)
 
         public_path = os.path.join(key_dir, f"{self.name}_public_key")

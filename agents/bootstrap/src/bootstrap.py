@@ -2,6 +2,7 @@ import time
 import zmq
 import zmq.asyncio
 import asyncio
+import uuid
 
 from discovery.src.base_agent import BaseAgent
 
@@ -10,10 +11,7 @@ class BootstrapAgent(BaseAgent):
        super().__init__(name, "Bootstrap")
 
     def start_network(self):
-        print("starting")
+        self.gen_uuid()
 
     def gen_uuid(self):
-        pass
-
-    def gen_key(self):
-        pass
+        self.network_UUID = uuid.uuid1()
