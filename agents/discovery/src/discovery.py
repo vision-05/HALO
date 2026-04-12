@@ -2,6 +2,7 @@ import asyncio
 import socket
 from zeroconf import IPVersion, ServiceStateChange
 from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf, AsyncServiceBrowser
+import zmq.utils.z85
 
 def get_local_ip():
     """get_local_ip -> None
@@ -36,18 +37,21 @@ class HaloServiceListener:
 
 class Discovery:
     """Discovery"""
-    def __init__(self, agent_name, agent_role,  zmq_port, new_peer_callback):
+    def __init__(self, agent_name, agent_role,  zmq_port, public_key, new_peer_callback):
         self.aiozc = AsyncZeroconf()
         self.browser = None
         self.service_type = "_halo._tcp.local."
         self.local_ip = get_local_ip()
+
+        encoded_key = zmq.utils.z85.encode(public_key)
 
         self.my_info = AsyncServiceInfo(
             self.service_type,
             f"{agent_name}.{self.service_type}",
             addresses=[socket.inet_aton(self.local_ip)],
             port=zmq_port,
-            properties={"role": agent_role},
+            properties={"role": agent_role,
+                        "pubkey": encoded_key},
             server=f"{agent_name}.local.",
         )
 
@@ -72,8 +76,10 @@ class Discovery:
             ip = socket.inet_ntoa(info.addresses[0])
             port = info.port
             role = info.properties.get(b"role", b"").decode("utf-8")
+            pubkey = info.properties.get(b"pubkey", b"")
+            decoded_pubkey = zmq.utils.z85.decode(pubkey) if pubkey else None
 
-            peer_data = {"ip": ip, "port": port, "role": role}
+            peer_data = {"ip": ip, "port": port, "role": role, "pubkey": decoded_pubkey}
 
             self.active_peers[name] = peer_data        
             self.new_peer_callback(name, peer_data)

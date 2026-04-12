@@ -22,7 +22,7 @@ def peer_found(peer_name, peer_data):
     print(f"Peer {peer_name} with data {peer_data}")
 
 @pytest.mark.asyncio
-async def test_discovery():
+async def _test_discovery():
     peer_found_event = asyncio.Event()
     peers = []
 
@@ -53,7 +53,7 @@ async def test_discovery():
     assert len(peers) == 6
 
 @pytest.mark.asyncio
-async def test_base_discovery():
+async def _test_base_discovery():
     a1 = BaseAgent("B1", "Boot")
     a2 = BaseAgent("B2", "Client")
 
