@@ -1,6 +1,6 @@
 import zmq.asyncio
 import zmq
-from discovery import Discovery
+from discovery.src.discovery import Discovery
 import asyncio
 import os
 
@@ -26,27 +26,32 @@ class BaseAgent:
         self.outbound_socks = {}
         self.pubkey_lookup = {}
 
-        def verify_peer(peername, peerdata):
-            clean_name = peername.split('.')[0]
-            print(f"{self.name} discovered {peername} at {peerdata['ip']}:{peerdata['port']}")
-            acc_input = input(f"{self.name} Do you accept the connection to {clean_name}? [y/n] ")
-            if acc_input == "n":
-                return
-            print("Connecting...")
-            self.peers[clean_name] = peerdata
-            dealer = self.ctx.socket(zmq.DEALER)
-            dealer.setsockopt_string(zmq.IDENTITY, self.name)
-            dealer.curve_server = False
-            dealer.curve_publickey = self.public_key
-            dealer.curve_secretkey = self.secret_key
-            self.pubkey_lookup[clean_name] = peerdata['pubkey']
-            dealer.curve_serverkey = peerdata['pubkey']
-            dealer.connect(f"tcp://{peerdata['ip']}:{peerdata['port']}")
-            self.outbound_socks[clean_name] = dealer
-
-        self.service = Discovery(name, role, self.port, self.public_key, new_peer_callback=verify_peer)
+        self.service = Discovery(name, role, self.port, self.public_key, new_peer_callback=self.verify_peer)
         self.network_UUID = None
 
+    def verify_peer(self, peername, peerdata):
+        asyncio.create_task(self.verification_prompt(peername, peerdata))
+
+    async def verification_prompt(self, peername, peerdata):
+        clean_name = peername.split('.')[0]
+        print(f"{self.name} discovered {peername} at {peerdata['ip']}:{peerdata['port']}")
+        acc_input = input(f"{self.name} Do you accept the connection to {clean_name}? [y/n] ")
+        if acc_input == "n":
+            return
+        self.connect_peer(clean_name, peerdata)
+        
+    def connect_peer(self, clean_name, peerdata):
+        print("Connecting...")
+        self.peers[clean_name] = peerdata
+        dealer = self.ctx.socket(zmq.DEALER)
+        dealer.setsockopt_string(zmq.IDENTITY, self.name)
+        dealer.curve_server = False
+        dealer.curve_publickey = self.public_key
+        dealer.curve_secretkey = self.secret_key
+        self.pubkey_lookup[clean_name] = peerdata['pubkey']
+        dealer.curve_serverkey = peerdata['pubkey']
+        dealer.connect(f"tcp://{peerdata['ip']}:{peerdata['port']}")
+        self.outbound_socks[clean_name] = dealer
 
     async def broadcast_and_discover(self):
         """Broadcast agent and wait 5 seconds to discover other agents\n

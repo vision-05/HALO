@@ -35,12 +35,8 @@ ENTRYPOINT ["pytest", "-s", "bootstrap/test/"]
 
 FROM base as prod
 
-RUN adduser --disabled-password --gecos "" agent
+COPY bootstrap/src/ ./bootstrap/src/
+COPY discovery/src/ ./discovery/src/
 
-COPY src/ ./src/
-
-RUN chown -R agent:agent /bootstrap/src
-
-USER agent
 
 ENTRYPOINT ["python", "bootstrap/src/main.py"]

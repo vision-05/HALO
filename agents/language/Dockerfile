@@ -7,37 +7,35 @@ RUN apt-get update && \
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements.txt .
+COPY language/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+FROM builder as test-builder
+
+COPY language/requirements-test.txt .
+RUN pip install --no-cache-dir -r requirements-test.txt
+
 FROM ubuntu/python:3.10-22.04_stable AS base
 
-COPY --from=builder /opt/venv /opt/venv
+COPY --from=test-builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-
+ENV PYTHONPATH="/app"
 
 WORKDIR /app
 
 FROM base as test
 
-COPY requirements-test.txt .
-RUN pip install --no-cache-dir -r requirements-test.txt
-
-COPY src/ ./src/
-COPY test/ ./test/
+COPY langauge/src/ ./language/src/
+COPY language/test/ ./language/test/
+COPY discovery/src/ ./discovery/src/
 
 
-ENTRYPOINT ["pytest", "test/"]
+ENTRYPOINT ["pytest", "-s", "language/test/"]
 
 FROM base as prod
 
-RUN adduser --disabled-password --gecos "" agent
+COPY language/src/ ./language/src/
+COPY discovery/src/ ./discovery/src/
 
-COPY src/ ./src/
-
-RUN chown -R agent:agent /src
-
-USER agent
-
-ENTRYPOINT ["python", "src/main.py"]
+ENTRYPOINT ["python", "language/src/main.py"]

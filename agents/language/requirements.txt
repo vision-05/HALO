@@ -1,6 +1,9 @@
 langgraph
 langchain
-langchain-anthropic
+langchain-openai
 langchain-community
 python-dotenv
 requests
+python-telegram-bot
+zmq
+zeroconf
