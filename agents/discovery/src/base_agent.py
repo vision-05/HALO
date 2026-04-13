@@ -72,7 +72,7 @@ class BaseAgent:
         print("Sent message")
 
     async def recv_msg(self):
-        """Receive messages from the network, running constantly for agent lifetime"""
+        """Receive messages from the network, running constantly for agent lifetime. Encodes input string to utf-8 for sending to other agents"""
         while True:
             frames = await self.router.recv_multipart()
             sender_id = frames[0].decode('utf-8')
