@@ -67,6 +67,7 @@ class BaseAgent:
         if not dealer:
             return
         
+        payload = payload.encode('utf-8')
         await dealer.send(payload)
         print("Sent message")
 

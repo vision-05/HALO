@@ -12,9 +12,12 @@ from telegram import ForceReply, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 import asyncio
+import json
 
 from discovery.src.base_agent import BaseAgent
 from language_agent import LanguageAgent
+
+lang_agent = None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -44,12 +47,14 @@ Use this exact schema:
 "action": "the actuation",
 "target": "LightA1"
 }
-} """
-
-
+} Do NOT wrap your response in markdown blocks or include any backticks or the word json """
 
 async def respond(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(llm.invoke(sys_prompt + update.message.text).content)
+    global lang_agent
+    response = llm.invoke(sys_prompt + f"Current connected agents: {lang_agent.get_peer_info()}" + update.message.text).content
+    human_resp = json.loads(response[7:-3])
+    await update.message.reply_text(human_resp["telegram_reply"])
+    await lang_agent.send_msg(human_resp["network_payload"]["target"], human_resp["network_payload"]["action"])
 
 def main():
     application = Application.builder().token(TELEGRAM_BOT_KEY).post_init(start_mesh).build()
@@ -59,8 +64,6 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, respond))
 
     application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-lang_agent = None
 
 async def accept_peer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:

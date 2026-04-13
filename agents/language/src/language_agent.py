@@ -27,3 +27,6 @@ class LanguageAgent(BaseAgent):
             text=message,
             parse_mode="HTML"
         )
+
+    def get_peer_info(self):
+        return list(self.peers.keys())
