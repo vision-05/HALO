@@ -127,7 +127,10 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     #runStatus.done { color: var(--green); }
-    .api-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .api-dot {
+      width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0;
+      background: #30363d;
+    }
     .live-row { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--muted); }
     .weather-source-pill {
       font-size: 0.6rem; font-weight: 700; padding: 0.12rem 0.4rem; border-radius: 4px;
@@ -196,15 +199,15 @@
     function haloApiOrigin() {
       const m = document.querySelector('meta[name="halo-api-origin"]');
       if (m && String(m.content).trim()) return String(m.content).trim().replace(/\/$/, '');
-      if (window.location.protocol === 'file:') return 'http://127.0.0.1:8004';
+      // Opening index.html from disk — default to HALO uvicorn port (see server.py header).
+      if (window.location.protocol === 'file:') return 'http://127.0.0.1:8000';
       const host = (window.location.hostname || '').toLowerCase();
-      const port = window.location.port;
-      if (port === '8004') return '';
       const looksLikeEditorPreview =
         /vscode-webview|\.vscode-cdn\.net|github\.dev|\.app\.github\.dev|cursor|webview/i.test(host);
+      // Preview UIs are not served by FastAPI; API still runs on localhost (often :8004 in some setups).
       if (looksLikeEditorPreview) return 'http://127.0.0.1:8004';
-      if (port && port !== '8004')
-        return 'http://' + (host || '127.0.0.1') + ':8004';
+      // Page is real http(s) (e.g. http://localhost:8000) — use same host:port as the UI.
+      if (window.location.protocol === 'http:' || window.location.protocol === 'https:') return '';
       return '';
     }
     function haloApiUrl(path) {
@@ -509,6 +512,8 @@
           `${data.carbon_value} gCO2 · ${data.carbon_level}`;
       } catch (e) {
         console.warn('API status check failed', e);
+        document.getElementById('carbon-dot').style.background = apiStatusDotColor('error');
+        document.getElementById('weather-dot').style.background = apiStatusDotColor('error');
       }
     }
 
