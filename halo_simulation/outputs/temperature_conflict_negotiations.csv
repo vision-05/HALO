@@ -1,0 +1,9 @@
+timestamp,scenario,device_id,participants,iterations,converged,final_value,carbon_intensity,fallback_used,satisfaction_person_alice,satisfaction_person_bob,preference_person_alice,preference_person_bob
+390.7374721701924,temperature_conflict,device_thermostat,"person_alice,person_bob",1,True,20.37735849056604,332.3094158716126,False,0.8840970350404314,0.9016172506738543,22.0,19.0
+1091.2597679370967,temperature_conflict,device_thermostat,"person_alice,person_bob",1,True,20.37735849056604,316.985632757245,False,0.8840970350404314,0.9016172506738543,22.0,19.0
+1773.605764384568,temperature_conflict,device_thermostat,"person_alice,person_bob",1,True,20.37735849056604,301.7217507826669,False,0.8840970350404314,0.9016172506738543,22.0,19.0
+1868.0474545377133,temperature_conflict,device_thermostat,"person_alice,person_bob",1,True,20.400000000000002,242.837775988731,False,0.8857142857142859,0.8999999999999998,22.0,19.0
+2521.9323238873694,temperature_conflict,device_thermostat,"person_alice,person_bob",1,True,20.37735849056604,329.42019882982277,False,0.8840970350404314,0.9016172506738543,22.0,19.0
+3249.23677931792,temperature_conflict,device_thermostat,"person_alice,person_bob",1,True,20.37735849056604,310.41969724840675,False,0.8840970350404314,0.9016172506738543,22.0,19.0
+3333.5143962119664,temperature_conflict,device_thermostat,"person_alice,person_bob",1,True,20.400000000000002,216.3073175962566,False,0.8857142857142859,0.8999999999999998,22.0,19.0
+3953.269835695795,temperature_conflict,device_thermostat,"person_alice,person_bob",1,True,20.37735849056604,307.91083579552947,False,0.8840970350404314,0.9016172506738543,22.0,19.0
