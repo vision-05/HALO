@@ -93,7 +93,7 @@ class BaseAgent:
             min_node = min(self.heartbeats, key=self.heartbeats.get)
             max_node = max(self.heartbeats, key=self.heartbeats.get)
 
-            if self.heartbeats[min_node] < time.time() - 10:
+            if self.heartbeats[min_node] < time.time() - 30:
                 print(f"pruning {min_node}")
                 del self.heartbeats[min_node]
                 del self.outbound_socks[min_node]
@@ -125,15 +125,19 @@ class BaseAgent:
                 self.heartbeats[sender_id] = time.time()
                 continue
 
-            if frames[1][0] == b"{":
+            print(frames)
+
+            try:
                 data = json.loads(frames[1].decode('utf-8'))
                 if hasattr(self, "handlers"):
                     action = self.handlers.get(data["action"], None)
                     if action is not None:
                         if inspect.iscoroutinefunction(action):
-                            await action()
+                            await action(data)
                         else:
-                            action()
+                            action(data)
+            except json.JSONDecodeError:
+                print("Failed decode")
 
             print(f"{self.name} received {message_data} from {sender_id}")
 

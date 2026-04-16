@@ -39,3 +39,11 @@ COPY language/src/ ./language/src/
 COPY discovery/src/ ./discovery/src/
 
 ENTRYPOINT ["python", "language/src/main.py"]
+
+FROM base as api
+
+COPY language/src/ ./language/src/
+COPY discovery/src/ ./discovery/src/
+
+ENTRYPOINT ["python", "language/src/api.py"]
+

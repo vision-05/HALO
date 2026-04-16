@@ -1,2 +1,4 @@
 zmq
 zeroconf
+requests
+ddgs

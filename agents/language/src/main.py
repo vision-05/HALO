@@ -45,13 +45,13 @@ Use this exact schema:
 "telegram_reply": "The friendly, human-readable message to send to the user",
 "network_payload": {
 "action": "the actuation",
-"target": "LightA1"
+"target": "the target"
 }
 } Do NOT wrap your response in markdown blocks or include any backticks or the word json """
 
 async def respond(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global lang_agent
-    response = llm.invoke(sys_prompt + f"Current connected agents: {lang_agent.get_peer_info()}" + update.message.text).content
+    response = llm.invoke(sys_prompt + f"Current connected agents: {lang_agent.get_peer_info()}, current available actions for connected devices {lang_agent.schemas}" + update.message.text).content
     if response[0] == "`":
         response = response[7:-3]
     human_resp = json.loads(response)
@@ -66,7 +66,7 @@ async def respond(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target = commands[0].get("target", None)
     if target is not None:
         for command in commands:
-            await lang_agent.send_msg(command["target"], command["action"])
+            await lang_agent.send_msg(command["target"], json.dumps(command))
 
 def main():
     application = Application.builder().token(TELEGRAM_BOT_KEY).post_init(start_mesh).build()
