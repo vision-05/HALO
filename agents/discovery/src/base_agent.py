@@ -4,6 +4,8 @@ from discovery.src.discovery import Discovery
 import asyncio
 import os
 import time
+import json
+import inspect
 
 class BaseAgent:
     """Base Agent implementation"""
@@ -56,6 +58,10 @@ class BaseAgent:
         dealer.connect(f"tcp://{peerdata['ip']}:{peerdata['port']}")
         self.outbound_socks[clean_name] = dealer
 
+    async def loop(self, callback=None):
+        if callback is not None:
+            callback()
+
     async def broadcast_and_discover(self):
         """Broadcast agent and wait 5 seconds to discover other agents\n
         Stop broadcasting and discovering (change this later)"""
@@ -80,7 +86,6 @@ class BaseAgent:
 
     async def prune_network(self): #check heartbeat count
         while True:
-            print(self.heartbeats)
             if len(self.heartbeats) < 1:
                 await asyncio.sleep(0.5)
                 continue
@@ -88,9 +93,7 @@ class BaseAgent:
             min_node = min(self.heartbeats, key=self.heartbeats.get)
             max_node = max(self.heartbeats, key=self.heartbeats.get)
 
-            print(self.heartbeats[max_node] - self.heartbeats[min_node])
-
-            if self.heartbeats[min_node] < time.time() - 3:
+            if self.heartbeats[min_node] < time.time() - 10:
                 print(f"pruning {min_node}")
                 del self.heartbeats[min_node]
                 del self.outbound_socks[min_node]
@@ -106,7 +109,6 @@ class BaseAgent:
         
         payload = payload.encode('utf-8')
         await dealer.send(payload)
-        print("Sent message")
 
     async def recv_msg(self):
         """Receive messages from the network, running constantly for agent lifetime. Encodes input string to utf-8 for sending to other agents"""
@@ -115,15 +117,23 @@ class BaseAgent:
             sender_id = frames[0].decode('utf-8')
 
             if sender_id not in self.pubkey_lookup.keys():
-                print("Dropped unauthorised packet")
                 continue
 
             message_data = frames[1]
 
-            print(frames[1])
-
             if frames[1] == b"heartbeat":
                 self.heartbeats[sender_id] = time.time()
+                continue
+
+            if frames[1][0] == b"{":
+                data = json.loads(frames[1].decode('utf-8'))
+                if hasattr(self, "handlers"):
+                    action = self.handlers.get(data["action"], None)
+                    if action is not None:
+                        if inspect.iscoroutinefunction(action):
+                            await action()
+                        else:
+                            action()
 
             print(f"{self.name} received {message_data} from {sender_id}")
 

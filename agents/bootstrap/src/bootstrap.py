@@ -15,3 +15,8 @@ class BootstrapAgent(BaseAgent):
 
     def gen_uuid(self):
         self.network_UUID = uuid.uuid1()
+
+        with open("netuuid.txt", "wb") as f:
+            f.write(self.network_UUID.bytes)
+
+        print(str(self.network_UUID))

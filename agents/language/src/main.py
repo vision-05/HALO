@@ -52,9 +52,21 @@ Use this exact schema:
 async def respond(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global lang_agent
     response = llm.invoke(sys_prompt + f"Current connected agents: {lang_agent.get_peer_info()}" + update.message.text).content
-    human_resp = json.loads(response[7:-3])
-    await update.message.reply_text(response)
-    #await lang_agent.send_msg(human_resp["network_payload"]["target"], human_resp["network_payload"]["action"])
+    if response[0] == "`":
+        response = response[7:-3]
+    human_resp = json.loads(response)
+    await update.message.reply_text(human_resp["telegram_reply"])
+    net_commands = human_resp.get("network_payload", None)
+    print(net_commands)
+    commands = net_commands
+
+    if not isinstance(net_commands, List):
+        commands = [net_commands]
+
+    target = commands[0].get("target", None)
+    if target is not None:
+        for command in commands:
+            await lang_agent.send_msg(command["target"], command["action"])
 
 def main():
     application = Application.builder().token(TELEGRAM_BOT_KEY).post_init(start_mesh).build()

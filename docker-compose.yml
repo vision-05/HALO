@@ -34,7 +34,41 @@ services:
     network_mode: host
     environment:
       - PYTHONUNBUFFERED=1
-  
+      - AGENT_NAME=LivingRoomLight
+      - AGENT_ROLE=Actuator
+
+  dishwasher:
+    build:
+      context: ./agents
+      dockerfile: generic/Dockerfile
+      target: prod
+    network_mode: host
+    environment:
+      - PYTHONUNBUFFERED=1
+      - AGENT_NAME=Dishwasher
+      - AGENT_ROLE=Actuator
+
+  security_cam:
+    build:
+      context: ./agents
+      dockerfile: generic/Dockerfile
+      target: prod
+    network_mode: host
+    environment:
+      - PYTHONUNBUFFERED=1
+      - AGENT_NAME=SecurityCam
+      - AGENT_ROLE=Actuator
+
+  livingroomtv:
+    build:
+      context: ./agents
+      dockerfile: generic/Dockerfile
+      target: tv
+    network_mode: host
+    environment:
+      - PYTHONUNBUFFERED=1
+      - AGENT_NAME=LivingRoomTV
+      - AGENT_ROLE=Actuator
   generic-test:
     build:
       context: ./agents

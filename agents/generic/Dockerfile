@@ -2,7 +2,7 @@ FROM ubuntu:22.04 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
-    apt-get install -y python3-pip python3-venv build-essential
+    apt-get install -y python3-pip python3-venv build-essential android-tools-adb
 
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
@@ -39,3 +39,10 @@ COPY generic/src/ ./generic/src/
 COPY discovery/src/ ./discovery/src/
 
 ENTRYPOINT ["python", "generic/src/main.py"]
+
+FROM base as tv
+
+COPY generic/src/ ./generic/src/
+COPY discovery/src/ ./discovery/src/
+
+ENTRYPOINT ["python", "generic/src/tcltv.py"]
