@@ -10,6 +10,7 @@ services:
       - CLAUDE_KEY
       - TELEGRAM_KEY
       - TEL_CHAT_ID
+      - PYTHONUNBUFFERED=1
 
   language-test:
     build:
@@ -28,8 +29,11 @@ services:
       context: ./agents
       dockerfile: generic/Dockerfile
       target: prod
-    container_name: halo-generic
+    deploy:
+      replicas: 5
     network_mode: host
+    environment:
+      - PYTHONUNBUFFERED=1
   
   generic-test:
     build:

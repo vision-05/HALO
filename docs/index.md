@@ -4,6 +4,14 @@ Holistic Agentic Living Orchestration
 
 A secure, decentralised, privacy oriented agentic system for home automation.
 
+## TODO:
+
+[ ] Mobile advocator app
+[ ] Network creation + UUID
+[ ] Mobile network switching 
+[ ] Messages for RL rewards/penalties
+[ ] Blockchain provenance
+
 ## Instructions
 ### Running the agents
 

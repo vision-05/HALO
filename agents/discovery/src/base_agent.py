@@ -3,6 +3,7 @@ import zmq
 from discovery.src.discovery import Discovery
 import asyncio
 import os
+import time
 
 class BaseAgent:
     """Base Agent implementation"""
@@ -25,6 +26,8 @@ class BaseAgent:
         self.peers = {}
         self.outbound_socks = {}
         self.pubkey_lookup = {}
+        self.state = {}
+        self.heartbeats = {}
 
         self.service = Discovery(name, role, self.port, self.public_key, new_peer_callback=self.verify_peer)
         self.network_UUID = None
@@ -35,9 +38,9 @@ class BaseAgent:
     async def verification_prompt(self, peername, peerdata):
         clean_name = peername.split('.')[0]
         print(f"{self.name} discovered {peername} at {peerdata['ip']}:{peerdata['port']}")
-        acc_input = input(f"{self.name} Do you accept the connection to {clean_name}? [y/n] ")
-        if acc_input == "n":
-            return
+        #acc_input = input(f"{self.name} Do you accept the connection to {clean_name}? [y/n] ")
+        #if acc_input == "n": #comment out in testing
+        #    return
         self.connect_peer(clean_name, peerdata)
         
     def connect_peer(self, clean_name, peerdata):
@@ -61,6 +64,40 @@ class BaseAgent:
     async def stop_broadcasting(self):
         await self.service.stop()
 
+    async def broadcast_state(self):
+        for dealer in self.outbound_socks:
+            payload = str(self.state).encode('utf-8')
+            await dealer.send(payload)
+            await asyncio.sleep(10.0)
+
+    async def heartbeat(self):
+        while True:
+            for dealer in self.outbound_socks.values():
+                payload = "heartbeat".encode('utf-8')
+                await dealer.send(payload)
+        
+            await asyncio.sleep(1.0)
+
+    async def prune_network(self): #check heartbeat count
+        while True:
+            print(self.heartbeats)
+            if len(self.heartbeats) < 1:
+                await asyncio.sleep(0.5)
+                continue
+
+            min_node = min(self.heartbeats, key=self.heartbeats.get)
+            max_node = max(self.heartbeats, key=self.heartbeats.get)
+
+            print(self.heartbeats[max_node] - self.heartbeats[min_node])
+
+            if self.heartbeats[min_node] < time.time() - 3:
+                print(f"pruning {min_node}")
+                del self.heartbeats[min_node]
+                del self.outbound_socks[min_node]
+                del self.peers[min_node]
+
+            await asyncio.sleep(0.5)
+
     async def send_msg(self, dest, payload):
         """Fetch the dealer corresponding to the destination agent and send the message"""
         dealer = self.outbound_socks.get(dest)
@@ -82,6 +119,11 @@ class BaseAgent:
                 continue
 
             message_data = frames[1]
+
+            print(frames[1])
+
+            if frames[1] == b"heartbeat":
+                self.heartbeats[sender_id] = time.time()
 
             print(f"{self.name} received {message_data} from {sender_id}")
 

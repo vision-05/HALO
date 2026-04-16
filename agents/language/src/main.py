@@ -53,8 +53,8 @@ async def respond(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global lang_agent
     response = llm.invoke(sys_prompt + f"Current connected agents: {lang_agent.get_peer_info()}" + update.message.text).content
     human_resp = json.loads(response[7:-3])
-    await update.message.reply_text(human_resp["telegram_reply"])
-    await lang_agent.send_msg(human_resp["network_payload"]["target"], human_resp["network_payload"]["action"])
+    await update.message.reply_text(response)
+    #await lang_agent.send_msg(human_resp["network_payload"]["target"], human_resp["network_payload"]["action"])
 
 def main():
     application = Application.builder().token(TELEGRAM_BOT_KEY).post_init(start_mesh).build()
@@ -85,6 +85,8 @@ async def start_mesh(app: Application):
     lang_agent = LanguageAgent(TELEGRAM_BOT_KEY, TELEGRAM_CHAT_ID)
 
     asyncio.create_task(lang_agent.broadcast_and_discover())
+    asyncio.create_task(lang_agent.heartbeat())
+    asyncio.create_task(lang_agent.prune_network())
     asyncio.create_task(lang_agent.recv_msg())
 
 if __name__ == "__main__":

@@ -1,20 +1,18 @@
 from discovery.src.base_agent import BaseAgent
 import asyncio
+import uuid
+
+container_id = str(uuid.uuid1())
 
 async def main():
-    livingroomlight = BaseAgent("LivingRoomLight", "Actuator")
-    carbonagg = BaseAgent("CarbonAggregator", "Aggregator")
-    thermostat = BaseAgent("Thermostat", "Actuator")
-    fridgechecker = BaseAgent("FridgeBot", "Actuator")
-    groceryshopper = BaseAgent("GroceryAggregator", "Aggregator")
+    livingroomlight = BaseAgent("LivingRoomLight"+container_id, "Actuator")
 
-    await asyncio.gather(livingroomlight.broadcast_and_discover(), carbonagg.broadcast_and_discover(), thermostat.broadcast_and_discover(),
-                         fridgechecker.broadcast_and_discover(), groceryshopper.broadcast_and_discover())
+    asyncio.create_task(livingroomlight.broadcast_and_discover())
+
+    asyncio.create_task(livingroomlight.heartbeat())
+    asyncio.create_task(livingroomlight.prune_network())
     
     await livingroomlight.recv_msg()
-    await carbonagg.recv_msg()
-    await thermostat.recv_msg()
-    await fridgechecker.recv_msg()
-    await groceryshopper.recv_msg()
+
 
 asyncio.run(main())
