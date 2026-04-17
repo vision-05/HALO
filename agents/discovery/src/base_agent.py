@@ -141,6 +141,9 @@ class BaseAgent:
 
             print(f"{self.name} received {message_data} from {sender_id}")
 
+    def get_handlers(self):
+        return list(self.handlers.keys())
+
     def gen_key(self, key_dir='./.keys'):
         """Check whether public/private key pair already exists for this agent on disk\n
         Loads keys if on disk, otherwise generates new pair and writes to file"""
