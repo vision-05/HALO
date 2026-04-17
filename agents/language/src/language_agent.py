@@ -1,42 +1,19 @@
 from discovery.src.base_agent import BaseAgent
-from telegram import Bot
 
+from typing import List, Literal
+from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
+
+import asyncio
+import json
+import uuid
 import requests
 import re
-
-def find_netflix_id(show_name: str) -> str:
-    """
-    Scrapes DuckDuckGo to find the official Netflix Show ID.
-    We use DuckDuckGo's basic HTML version because it does not block simple Python scripts like Google does.
-    """
-    print(f"[LanguageAgent] Searching the web for Netflix ID: '{show_name}'...")
-    
-    # Force the search engine to only return official Netflix title pages
-    query = f"site:netflix.com/title {show_name}"
-    url = f"https://html.duckduckgo.com/html/?q={query}"
-    
-    # We must fake a web browser so DuckDuckGo doesn't reject the request
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, timeout=5)
-        
-        # The Regex Pattern: Look for the exact URL structure and grab the 8 numbers at the end
-        match = re.search(r'netflix\.com/title/(\d{8})', response.text)
-        
-        if match:
-            show_id = match.group(1)
-            print(f"[LanguageAgent] Found ID {show_id} for '{show_name}'!")
-            return show_id
-        else:
-            print(f"[LanguageAgent] Could not find a Netflix ID for '{show_name}'.")
-            return None
-            
-    except Exception as e:
-        print(f"[LanguageAgent] Error scraping for ID: {e}")
-        return None
+import os
+CLAUDE_API_KEY = os.environ['CLAUDE_KEY']
 
 
 class LanguageAgent(BaseAgent):
@@ -51,9 +28,73 @@ class LanguageAgent(BaseAgent):
         self.handlers = {"schema": self.get_peer_schema}
         self.schemas = {}
 
+        self.llm = ChatOpenAI(
+            model='bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0',
+            temperature=0.7,
+            max_tokens=1024,
+            api_key=CLAUDE_API_KEY,
+            base_url='https://litellm.prod.outshift.ai/'
+        )
+
+        self.sys_prompt = """You are a HALO management assistant. You must process the user's request and output your response ONLY as a raw JSON object. Do not include markdown formatting or conversational filler outside the JSON.
+
+                        Use this exact schema:
+                        {
+                        "telegram_reply": "The friendly, human-readable message to send to the user",
+                        "network_payload": {
+                        "action": "the actuation",
+                        "target": "the target"
+                        }
+                         Do NOT wrap your response in markdown blocks or include any backticks or the word json """
+
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        await update.message.reply_html(rf"Hi {user.mention_html()}!",
+                                       reply_markup = ForceReply(selective=True))
+    
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Help!")
+
+    async def respond(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        response = self.llm.invoke(self.sys_prompt + f"Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + update.message.text).content
+        if response[0] == "`":
+            response = response[7:-3]
+        human_resp = json.loads(response)
+        await update.message.reply_text(human_resp["telegram_reply"])
+        net_commands = human_resp.get("network_payload", None)
+        print(net_commands)
+        commands = net_commands
+
+        if not isinstance(net_commands, List):
+            commands = [net_commands]
+
+        target = commands[0].get("target", None)
+        if target is not None:
+            for command in commands:
+                await self.send_msg(command["target"], json.dumps(command))
+
+    async def accept_peer(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not context.args:
+            await update.message.reply_text("Please specify a node name to connect to: ")
+            return
+
+        target_node = context.args[0]
+
+        if target_node in self.pending_peers:
+            peerdata = self.pending_peers.pop(target_node)
+            self.connect_peer(target_node, peerdata)
+
+            await update.message.reply_text(f"Connected to {target_node}")
+        else:
+            await update.message.reply_text(f"Not recognised {target_node}")
+
+
     async def verification_prompt(self, peername, peerdata):
         clean_name = peername.split('.')[0]
-        self.pending_peers[clean_name] = peerdata
+
+        short_id = uuid.uuid4().hex[:12]
+        self.pending_peers[short_id] = {"name": clean_name,
+                                        "data": peerdata}
         
         message = (
             f"🌐 <b>New HALO Node Discovered</b>\n"
@@ -62,11 +103,43 @@ class LanguageAgent(BaseAgent):
             f"Reply with <code>/accept {clean_name}</code> to pair."
         )
 
+        keyboard = [[InlineKeyboardButton("✅ Accept", callback_data=f"acc_{short_id}"),
+                     InlineKeyboardButton("❌ Reject", callback_data=f"rej{short_id}")]]
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         await self.bot.send_message(
             chat_id = self.admin_chat_id,
             text=message,
-            parse_mode="HTML"
+            parse_mode="HTML",
+            reply_markup=reply_markup
         )
+
+    async def handle_button_press(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+
+        data = query.data
+
+        if data.startswith("acc_"):
+            short_id = data.split("acc_")[1]
+
+            if short_id in self.pending_peers:
+                pending_data = self.pending_peers[short_id]
+                clean_name = pending_data["name"]
+                peerdata = pending_data["data"]
+                self.connect_peer(clean_name, peerdata)
+                await query.edit_message_text(text=f"Accepted connection from {clean_name}")
+
+                del self.pending_peers[short_id]
+            else:
+                await query.edit_message_text(text=f"{clean_name} is no longer available")
+        elif data.startswith("rej_"):
+            short_id = data.split("rej_")[1]
+            pending_data = self.pending_peers[short_id]
+            clean_name = pending_data["name"]
+            await query.edit_message_text(text=f"Rejected {clean_name}")
+            self.pending_peers.pop(short_id, None)
 
     def get_peer_info(self):
         return list(self.peers.keys())
