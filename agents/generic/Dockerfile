@@ -11,7 +11,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY generic/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-FROM builder as test-builder
+FROM builder AS test-builder
 COPY generic/requirements-test.txt .
 RUN pip install --no-cache-dir -r requirements-test.txt
 
@@ -29,7 +29,7 @@ ENV PYTHONPATH="/app"
 WORKDIR /app
 
 
-FROM base as test
+FROM base AS test
 COPY --from=test-builder /opt/venv /opt/venv
 COPY generic/src/ ./generic/src/
 COPY generic/test/ ./generic/test/
@@ -37,14 +37,21 @@ COPY discovery/src/ ./discovery/src/
 ENTRYPOINT ["pytest", "-s", "generic/test/"]
 
 
-FROM base as prod
+FROM base AS prod
 COPY generic/src/ ./generic/src/
 COPY discovery/src/ ./discovery/src/
 ENTRYPOINT ["python", "generic/src/main.py"]
 
-FROM base as tv
+FROM base AS tv
 
 COPY generic/src/ ./generic/src/
 COPY discovery/src/ ./discovery/src/
 
 ENTRYPOINT ["python", "generic/src/tcltv.py"]
+
+FROM base AS stream
+
+COPY generic/src/ ./generic/src/
+COPY discovery/src/ ./discovery/src/
+
+ENTRYPOINT ["python", "generic/src/streaming_agg.py"]

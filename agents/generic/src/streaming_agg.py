@@ -3,24 +3,31 @@ import requests
 import re
 from ddgs import DDGS
 from urllib.parse import unquote
+import asyncio
 
 class StreamingAggregator(BaseAgent):
     def __init__(self, name):
         super().__init__(name, "Aggregator")
         self.urls = {"netflix": "site:netflix.com/title",
+                     "luna": "site:luna.amazon.com/game",
                      "disney+": "site:disneyplus.com"}
         self.regexes = {"netflix": r'netflix\.com/title/(\d+)',
+                        "luna": r'luna\.amazon\.com/game/.*?/([a-zA-Z0-9]{8,12})(?:[/?#]|$)',
                         "disney+": r'disneyplus\.com/.*?(?:series|movies|video)/(?:[^/]+/)*([a-zA-Z0-9]{8,})(?:[/?#]|$)'}
         
-        self.handlers = {"get_id_from_title": self.get_id_from_title,
+        self.handlers = {"get_id_from_title_and_service": self.get_id_from_title,
                          "explore_shows_by_search_term": self.get_titles_from_search}
 
-    def get_id_from_title(self, show_name, site="netflix"):
+        self.desc = "Can fetch Netflix, Disney+ and Luna titles from a given name."
+
+    def get_id_from_title(self, msg):
         """
         Uses the DuckDuckGo Search API to find the official Netflix Show ID.
         This bypasses the anti-bot blocks triggered by raw HTML scraping.
         """
-        print(f"[LanguageAgent] Searching the web for Netflix ID: '{show_name}'...")
+
+        show_name = msg["params"]["title"].lower()
+        site = msg["params"]["service"].lower()
     
         query = f"{self.urls[site]} {show_name}"
     
@@ -72,3 +79,9 @@ class StreamingAggregator(BaseAgent):
     def add_site(self, site, url, regex):
         self.urls[site] = url
         self.regexes[site] = regex
+
+async def main():
+    stream = StreamingAggregator("StreamingAggregator")
+    await stream.run()
+
+asyncio.run(main())

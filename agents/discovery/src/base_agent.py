@@ -30,12 +30,21 @@ class BaseAgent:
         self.pubkey_lookup = {}
         self.state = {}
         self.heartbeats = {}
+        self.handlers = {}
+        self.desc = ""
 
         self.service = Discovery(name, role, self.port, self.public_key, new_peer_callback=self.verify_peer)
         self.network_UUID = None
 
     def verify_peer(self, peername, peerdata):
         asyncio.create_task(self.verification_prompt(peername, peerdata))
+
+    async def run(self):
+        asyncio.create_task(self.broadcast_and_discover())
+        asyncio.create_task(self.heartbeat())
+        asyncio.create_task(self.prune_network())
+        asyncio.create_task(self.expose_handlers())
+        await self.recv_msg()
 
     async def verification_prompt(self, peername, peerdata):
         clean_name = peername.split('.')[0]
@@ -57,6 +66,11 @@ class BaseAgent:
         dealer.curve_serverkey = peerdata['pubkey']
         dealer.connect(f"tcp://{peerdata['ip']}:{peerdata['port']}")
         self.outbound_socks[clean_name] = dealer
+    
+    async def expose_handlers(self):
+        while True:
+            await self.send_msg("Claude", json.dumps({"action": "schema", self.name: self.get_handlers()}))
+            await asyncio.sleep(5.0)
 
     async def loop(self, callback=None):
         if callback is not None:
@@ -110,6 +124,24 @@ class BaseAgent:
         payload = payload.encode('utf-8')
         await dealer.send(payload)
 
+    def inject_wildcards(self, res, new_msg):
+        if not isinstance(res, (list, tuple)):
+            res = [res]
+
+        if isinstance(new_msg, dict):
+            return {key: self.inject_wildcards(res, value) for key, value in new_msg.items()}
+
+        elif isinstance(new_msg, list):
+            return [self.inject_wildcards(res, item) for item in new_msg]
+
+        elif isinstance(new_msg, str):
+            if new_msg == "$*":
+              return res
+            else:
+                return new_msg
+        else:
+            return new_msg
+
     async def recv_msg(self):
         """Receive messages from the network, running constantly for agent lifetime. Encodes input string to utf-8 for sending to other agents"""
         while True:
@@ -125,24 +157,30 @@ class BaseAgent:
                 self.heartbeats[sender_id] = time.time()
                 continue
 
-            print(frames)
-
             try:
                 data = json.loads(frames[1].decode('utf-8'))
+                if data.get("action",None) != "schema":
+                    print(data)
                 if hasattr(self, "handlers"):
                     action = self.handlers.get(data["action"], None)
                     if action is not None:
                         if inspect.iscoroutinefunction(action):
                             await action(data)
                         else:
-                            action(data)
+                            res = action(data)
+                            next_act = data.get("on_success", None)
+                            if next_act is not None:
+                                injected = self.inject_wildcards(res, next_act)
+                                print(injected)
+                                print("Sending new message")
+                                await self.send_msg(injected["target"], json.dumps(injected))
             except json.JSONDecodeError:
                 print("Failed decode")
 
             print(f"{self.name} received {message_data} from {sender_id}")
 
     def get_handlers(self):
-        return list(self.handlers.keys())
+        return [f"DescriptionStart: {self.desc} DescriptionEnd "] + list(self.handlers.keys())
 
     def gen_key(self, key_dir='./.keys'):
         """Check whether public/private key pair already exists for this agent on disk\n

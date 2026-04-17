@@ -43,8 +43,18 @@ class LanguageAgent(BaseAgent):
                         "telegram_reply": "The friendly, human-readable message to send to the user",
                         "network_payload": {
                         "action": "the actuation",
-                        "target": "the target"
-                        }
+                        "target": "the target",
+                        "source": "yourself",
+                        "params": {"p1": "dict of params", "p2": "more params"},
+                        "on_success": {"action": "next action",
+                                       "target": "the next target",
+                                       "source": "yourself",
+                                       "params": {"p1": "$*", "p2": "other param"}},
+                        "on_failure": {"action": "next action",
+                                       "target": "the next target",
+                                       "source": "yourself",
+                                       "params": {"p1": "$*", "p2": "other param"}}
+                        }} Where you can pass results of actions as parametsr by the wildcard $* 
                          Do NOT wrap your response in markdown blocks or include any backticks or the word json """
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

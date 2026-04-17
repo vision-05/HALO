@@ -187,15 +187,27 @@ class TclTv(BaseAgent):
         self.handlers = {"power_on": self.turn_onoff,
                          "power_off": self.turn_onoff,
                          "netflix": self.start_netflix,
-                         "netflix_play_show_by_name": self.netflix_play_show,
+                         "netflix_play_show_by_id": self.netflix_play_show,
                          "disney+": self.start_disney,
-                         "disney+_play_show_by_name": self.disney_play_show,
-                         "luna_play_game_by_name": self.play_luna_game}
+                         "disney+_play_show_by_id": self.disney_play_show,
+                         "luna_play_game_by_id": self.play_luna_game,
+                         "pause": self.play_pause,
+                         "resume": self.play_pause,
+                         "volume_by_percent_level": self.volume_control}
+
+        self.desc = "TV controlling agent, for all commands that involve playing media go through StreamAggregator first to get corresponding ID to title."
 
         subprocess.run(["adb", "connect", self.tv_ip], capture_output=True)
 
     async def turn_onoff(self, msg):
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "26"])
+
+    async def volume_control(self, msg):
+        level = msg["params"].get("level", 10)
+        subprocess.run(["adb", "-s", self.tv_ip, "shell", "media", "volume", "--stream", "3", "--set", str(level)])
+
+    async def play_pause(self, msg):
+        subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "85"])
 
     async def start_disney(self, msg):
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "start", "-n" "com.disney.disneyplus/com.bamtechmedia.dominguez.main.MainActivity"])
@@ -204,8 +216,7 @@ class TclTv(BaseAgent):
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "start", "-n", "com.netflix.ninja/.MainActivity"])
 
     async def disney_play_show(self, msg):
-        show_name = msg["show_name"]
-        show_id = find_disney_id(show_name)
+        show_id = msg["params"]["show_id"][0]
 
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "start", 
             "-a", "android.intent.action.VIEW", 
@@ -213,9 +224,7 @@ class TclTv(BaseAgent):
             "com.disney.disneyplus"])
 
     async def netflix_play_show(self, msg):
-        show_name = msg["show_name"]
-
-        show_id = find_netflix_id(show_name)
+        show_id = msg["params"]["show_id"][0]
         print(show_id)
         print(f"playing show {show_id}")
         await self.start_netflix(msg)
@@ -231,8 +240,7 @@ class TclTv(BaseAgent):
         Example: https://luna.amazon.com/game/fortnite/B09M... -> ID is "B09M..."
         """
 
-        game_name = data.get("game_name")
-        game_id = find_luna_id(game_name)
+        game_id = data["params"]["game_id"][0]
     
         if not game_id:
             print(f"[{self.name}] Error: play_luna_game requires a game_id")
@@ -283,18 +291,9 @@ class TclTv(BaseAgent):
         # Some cloud games require a second "Play" confirmation click
         await asyncio.sleep(3.0)
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "66"])
-    
-    async def expose_handlers(self):
-        while True:
-            await self.send_msg("Claude", json.dumps({"action": "schema", "TV": self.get_handlers()}))
-            await asyncio.sleep(5.0)
 
 async def main():
     tv = TclTv()
-    asyncio.create_task(tv.broadcast_and_discover())
-    asyncio.create_task(tv.heartbeat())
-    asyncio.create_task(tv.prune_network())
-    asyncio.create_task(tv.expose_handlers())
-    await tv.recv_msg()
+    await tv.run()
 
 asyncio.run(main())
