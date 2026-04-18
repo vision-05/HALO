@@ -9,6 +9,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 import asyncio
 import json
+import typing
 import uuid
 import requests
 import re
@@ -17,7 +18,7 @@ CLAUDE_API_KEY = os.environ['CLAUDE_KEY']
 
 
 class LanguageAgent(BaseAgent):
-    def __init__(self, telegram_token, admin_chat_id):
+    def __init__(self, telegram_token: str, admin_chat_id: str) -> None:
         super().__init__("Claude", "Language")
         self.telegram_token = telegram_token
         self.admin_chat_id = admin_chat_id
@@ -57,16 +58,30 @@ class LanguageAgent(BaseAgent):
                         }} Where you can pass results of actions as parametsr by the wildcard $* 
                          Do NOT wrap your response in markdown blocks or include any backticks or the word json """
 
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         await update.message.reply_html(rf"Hi {user.mention_html()}!",
                                        reply_markup = ForceReply(selective=True))
     
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("Help!")
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        current_chat_id = update.effective_chat.id
+        await update.message.reply_text(f"Help! The ID for this chat is: {current_chat_id}")
 
-    async def respond(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        response = self.llm.invoke(self.sys_prompt + f"Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + update.message.text).content
+    async def respond(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        is_group = update.message.chat.type in ['group', 'supergroup']
+        bot_username = (await context.bot.get_me()).username
+        
+        text = update.message.text
+        
+        if is_group:
+            # If in a group, ONLY respond if the bot is @mentioned
+            if f"@{bot_username}" not in text:
+                return # Ignore normal human-to-human group chatter
+            
+            # Strip the mention out so Claude just gets the raw command
+            text = text.replace(f"@{bot_username}", "").strip()
+
+        response = self.llm.invoke(self.sys_prompt + f"Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + text).content
         if response[0] == "`":
             response = response[7:-3]
         human_resp = json.loads(response)
@@ -83,7 +98,7 @@ class LanguageAgent(BaseAgent):
             for command in commands:
                 await self.send_msg(command["target"], json.dumps(command))
 
-    async def accept_peer(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def accept_peer(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not context.args:
             await update.message.reply_text("Please specify a node name to connect to: ")
             return
@@ -99,7 +114,7 @@ class LanguageAgent(BaseAgent):
             await update.message.reply_text(f"Not recognised {target_node}")
 
 
-    async def verification_prompt(self, peername, peerdata):
+    async def verification_prompt(self, peername: str, peerdata: dict) -> None:
         clean_name = peername.split('.')[0]
 
         short_id = uuid.uuid4().hex[:12]
@@ -125,7 +140,7 @@ class LanguageAgent(BaseAgent):
             reply_markup=reply_markup
         )
 
-    async def handle_button_press(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_button_press(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
         await query.answer()
 
@@ -151,10 +166,10 @@ class LanguageAgent(BaseAgent):
             await query.edit_message_text(text=f"Rejected {clean_name}")
             self.pending_peers.pop(short_id, None)
 
-    def get_peer_info(self):
+    def get_peer_info(self) -> None:
         return list(self.peers.keys())
 
-    def get_peer_schema(self, msg):
+    def get_peer_schema(self, msg: dict) -> None:
         schemas = list(msg.keys())
         self.schemas[schemas[1]] = msg[schemas[1]]
         print(self.schemas[schemas[1]])

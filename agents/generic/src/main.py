@@ -8,7 +8,7 @@ ROLE = os.environ.get("AGENT_ROLE", None)
 
 container_id = str(uuid.uuid1())
 
-async def main():
+async def main() -> None:
     a = BaseAgent(AGENT_NAME+container_id, ROLE)
 
     asyncio.create_task(a.broadcast_and_discover())

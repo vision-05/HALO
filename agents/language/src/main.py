@@ -18,7 +18,7 @@ from language_agent import LanguageAgent
 lang_agent = None
 
 
-async def start_mesh(application: Application):
+async def start_mesh(application: Application) -> None:
     global lang_agent
     lang_agent = LanguageAgent(TELEGRAM_BOT_KEY, TELEGRAM_CHAT_ID) 
 
@@ -33,7 +33,7 @@ async def start_mesh(application: Application):
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lang_agent.respond))
     application.add_handler(CallbackQueryHandler(lang_agent.handle_button_press))
 
-def start_telegram_bot():
+def start_telegram_bot() -> None:
     global lang_agent
     
     application = Application.builder().token(TELEGRAM_BOT_KEY).post_init(start_mesh).build()

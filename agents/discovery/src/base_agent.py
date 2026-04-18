@@ -6,10 +6,11 @@ import os
 import time
 import json
 import inspect
+from typing import Any, Dict, List, Optional, Union
 
 class BaseAgent:
     """Base Agent implementation"""
-    def __init__(self, name, role):
+    def __init__(self, name: str, role: str) -> None:
         """Generates/loads public/private key pair for this agent\n
         Creates router socket (for receiving messages)\n
         Binds to random port\n
@@ -36,17 +37,17 @@ class BaseAgent:
         self.service = Discovery(name, role, self.port, self.public_key, new_peer_callback=self.verify_peer)
         self.network_UUID = None
 
-    def verify_peer(self, peername, peerdata):
+    def verify_peer(self, peername: str, peerdata: Dict[str, Any]) -> None:
         asyncio.create_task(self.verification_prompt(peername, peerdata))
 
-    async def run(self):
+    async def run(self) -> None:
         asyncio.create_task(self.broadcast_and_discover())
         asyncio.create_task(self.heartbeat())
         asyncio.create_task(self.prune_network())
         asyncio.create_task(self.expose_handlers())
         await self.recv_msg()
 
-    async def verification_prompt(self, peername, peerdata):
+    async def verification_prompt(self, peername: str, peerdata: Dict[str, Any]) -> None:
         clean_name = peername.split('.')[0]
         print(f"{self.name} discovered {peername} at {peerdata['ip']}:{peerdata['port']}")
         #acc_input = input(f"{self.name} Do you accept the connection to {clean_name}? [y/n] ")
@@ -54,7 +55,7 @@ class BaseAgent:
         #    return
         self.connect_peer(clean_name, peerdata)
         
-    def connect_peer(self, clean_name, peerdata):
+    def connect_peer(self, clean_name: str, peerdata: Dict[str, Any]) -> None:
         print("Connecting...")
         self.peers[clean_name] = peerdata
         dealer = self.ctx.socket(zmq.DEALER)
@@ -67,30 +68,26 @@ class BaseAgent:
         dealer.connect(f"tcp://{peerdata['ip']}:{peerdata['port']}")
         self.outbound_socks[clean_name] = dealer
     
-    async def expose_handlers(self):
+    async def expose_handlers(self) -> None:
         while True:
             await self.send_msg("Claude", json.dumps({"action": "schema", self.name: self.get_handlers()}))
             await asyncio.sleep(5.0)
 
-    async def loop(self, callback=None):
-        if callback is not None:
-            callback()
-
-    async def broadcast_and_discover(self):
+    async def broadcast_and_discover(self) -> None:
         """Broadcast agent and wait 5 seconds to discover other agents\n
         Stop broadcasting and discovering (change this later)"""
         await self.service.start()
 
-    async def stop_broadcasting(self):
+    async def stop_broadcasting(self) -> None:
         await self.service.stop()
 
-    async def broadcast_state(self):
+    async def broadcast_state(self) -> None:
         for dealer in self.outbound_socks:
             payload = str(self.state).encode('utf-8')
             await dealer.send(payload)
             await asyncio.sleep(10.0)
 
-    async def heartbeat(self):
+    async def heartbeat(self) -> None:
         while True:
             for dealer in self.outbound_socks.values():
                 payload = "heartbeat".encode('utf-8')
@@ -98,7 +95,7 @@ class BaseAgent:
         
             await asyncio.sleep(1.0)
 
-    async def prune_network(self): #check heartbeat count
+    async def prune_network(self) -> None: #check heartbeat count
         while True:
             if len(self.heartbeats) < 1:
                 await asyncio.sleep(0.5)
@@ -115,7 +112,7 @@ class BaseAgent:
 
             await asyncio.sleep(0.5)
 
-    async def send_msg(self, dest, payload):
+    async def send_msg(self, dest: str, payload: str) -> None:
         """Fetch the dealer corresponding to the destination agent and send the message"""
         dealer = self.outbound_socks.get(dest)
         if not dealer:
@@ -124,7 +121,7 @@ class BaseAgent:
         payload = payload.encode('utf-8')
         await dealer.send(payload)
 
-    def inject_wildcards(self, res, new_msg):
+    def inject_wildcards(self, res: Any, new_msg: Union[Dict, List, str, Any]) -> Union[Dict, List, str, Any]:
         if not isinstance(res, (list, tuple)):
             res = [res]
 
@@ -142,7 +139,7 @@ class BaseAgent:
         else:
             return new_msg
 
-    async def recv_msg(self):
+    async def recv_msg(self) -> None:
         """Receive messages from the network, running constantly for agent lifetime. Encodes input string to utf-8 for sending to other agents"""
         while True:
             frames = await self.router.recv_multipart()
@@ -179,10 +176,10 @@ class BaseAgent:
 
             print(f"{self.name} received {message_data} from {sender_id}")
 
-    def get_handlers(self):
+    def get_handlers(self) -> List[str]:
         return [f"DescriptionStart: {self.desc} DescriptionEnd "] + list(self.handlers.keys())
 
-    def gen_key(self, key_dir='./.keys'):
+    def gen_key(self, key_dir: str = './.keys') -> None:
         """Check whether public/private key pair already exists for this agent on disk\n
         Loads keys if on disk, otherwise generates new pair and writes to file"""
         os.makedirs(key_dir, exist_ok=True)

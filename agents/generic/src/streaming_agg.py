@@ -6,21 +6,23 @@ from urllib.parse import unquote
 import asyncio
 
 class StreamingAggregator(BaseAgent):
-    def __init__(self, name):
+    def __init__(self, name: str) -> None:
         super().__init__(name, "Aggregator")
         self.urls = {"netflix": "site:netflix.com/title",
                      "luna": "site:luna.amazon.com/game",
-                     "disney+": "site:disneyplus.com"}
+                     "disney+": "site:disneyplus.com",
+                     "spotify": "site:open.spotify.com/track"}
         self.regexes = {"netflix": r'netflix\.com/title/(\d+)',
                         "luna": r'luna\.amazon\.com/game/.*?/([a-zA-Z0-9]{8,12})(?:[/?#]|$)',
-                        "disney+": r'disneyplus\.com/.*?(?:series|movies|video)/(?:[^/]+/)*([a-zA-Z0-9]{8,})(?:[/?#]|$)'}
+                        "disney+": r'disneyplus\.com/.*?(?:series|movies|video)/(?:[^/]+/)*([a-zA-Z0-9]{8,})(?:[/?#]|$)',
+                        "spotify": r'open\.spotify\.com/track/([a-zA-Z0-9]{22})(?:[/?#]|$)'}
         
         self.handlers = {"get_id_from_title_and_service": self.get_id_from_title,
                          "explore_shows_by_search_term": self.get_titles_from_search}
 
         self.desc = "Can fetch Netflix, Disney+ and Luna titles from a given name."
 
-    def get_id_from_title(self, msg):
+    def get_id_from_title(self, msg: dict) -> None:
         """
         Uses the DuckDuckGo Search API to find the official Netflix Show ID.
         This bypasses the anti-bot blocks triggered by raw HTML scraping.
@@ -73,14 +75,14 @@ class StreamingAggregator(BaseAgent):
             print(f"[LanguageAgent] Error scraping for ID: {e}")
             return None
 
-    def get_titles_from_search(self, search_string):
+    def get_titles_from_search(self, search_string: str) -> list:
         pass
 
-    def add_site(self, site, url, regex):
+    def add_site(self, site: str, url: str, regex: str):
         self.urls[site] = url
         self.regexes[site] = regex
 
-async def main():
+async def main() -> None:
     stream = StreamingAggregator("StreamingAggregator")
     await stream.run()
 

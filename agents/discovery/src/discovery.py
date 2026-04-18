@@ -1,11 +1,12 @@
 import asyncio
 import socket
+from typing import Callable, Any, Dict, Optional
 from zeroconf import IPVersion, ServiceStateChange
 from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf, AsyncServiceBrowser
 import zmq.utils.z85
 
-def get_local_ip():
-    """get_local_ip -> None
+def get_local_ip() -> str:
+    """get_local_ip -> str
     Function to get the local IP address on the network (not localhost)"""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -21,23 +22,23 @@ def get_local_ip():
 class HaloServiceListener:
     """HaloServiceListener
        Standard listener that follows ZeroConf implementation"""
-    def __init__(self, loop, on_discovered_callback, on_lost_callback):
+    def __init__(self, loop, on_discovered_callback: Callable, on_lost_callback: Callable) -> None:
         self.loop = loop
         self.on_discovered = on_discovered_callback
         self.on_lost = on_lost_callback
 
-    def add_service(self, zc, type_, name):
+    def add_service(self, zc: AsyncZeroconf, type_: str, name: str) -> None:
         asyncio.run_coroutine_threadsafe(self.on_discovered(zc, type_, name), self.loop)
 
-    def remove_service(self, zc, type_, name):
+    def remove_service(self, zc: AsyncZeroconf, type_: str, name: str) -> None:
         asyncio.run_coroutine_threadsafe(self.on_lost(zc, type_, name), self.loop)
 
-    def update_service(self, zc, type_, name):
+    def update_service(self, zc: AsyncZeroconf, type_: str, name: str) -> None:
         pass
 
 class Discovery:
     """Discovery"""
-    def __init__(self, agent_name, agent_role,  zmq_port, public_key, new_peer_callback):
+    def __init__(self, agent_name: str, agent_role: str,  zmq_port: int, public_key: bytes, new_peer_callback: Callable[[str, Dict[str, Any]], None]) -> None:
         self.aiozc = AsyncZeroconf()
         self.browser = None
         self.service_type = "_halo._tcp.local."
@@ -58,7 +59,7 @@ class Discovery:
         self.new_peer_callback = new_peer_callback
         self.active_peers = {}
 
-    async def start(self):
+    async def start(self) -> None:
         await self.aiozc.async_register_service(self.my_info)
 
         loop = asyncio.get_running_loop()
@@ -67,7 +68,7 @@ class Discovery:
 
         self.browser = AsyncServiceBrowser(self.aiozc.zeroconf, self.service_type, listener=listener)
 
-    async def _handle_new_peer(self, zc, type_, name):
+    async def _handle_new_peer(self, zc: AsyncZeroconf, type_: str, name: str) -> None:
         if name == self.my_info.name:
             return
         
@@ -85,12 +86,12 @@ class Discovery:
             self.new_peer_callback(name, peer_data)
         print(f"Added {name}")
 
-    async def _handle_lost_peer(self, name):
+    async def _handle_lost_peer(self, zc: AsyncZeroconf, type_: str, name: str) -> None:
         if name in self.active_peers:
             del self.active_peers[name]
             print(f"Lost {name}")
 
-    async def stop(self):
+    async def stop(self) -> None:
         if self.browser:
             await self.browser.async_cancel()
         await self.aiozc.async_unregister_service(self.my_info)

@@ -9,177 +9,8 @@ from ddgs import DDGS
 from urllib.parse import unquote
 import time
 
-def find_luna_id(game_name: str) -> str:
-    """
-    Uses the DuckDuckGo Search API (HTML backend) to find the official Amazon Luna Game ID.
-    Extracts the 10-character Amazon ASIN from the end of the URL.
-    """
-    print(f"[AggregatorAgent] Searching the web for Luna Game ID: '{game_name}'...")
-    
-    # Restrict the search specifically to Luna's game directory
-    query = f"site:luna.amazon.com/game {game_name}"
-    
-    for attempt in range(3):
-        try:
-            search_client = DDGS()
-            
-            # Use backend="html" to bypass the strict API rate limit
-            results = list(search_client.text(query, max_results=5, backend="html"))
-            
-            fallback_id = None
-                
-            for result in results:
-                # Decode DuckDuckGo tracking proxy links
-                url = unquote(result.get("href", ""))
-                title = result.get("title", "").lower()
-                
-                # THE REGEX: Looks for luna.amazon.com/game/[game-name-slug]/[10-CHARACTER-ASIN]
-                # We use {8,12} just in case Amazon ever slightly alters their ASIN length for digital goods
-                match = re.search(r'luna\.amazon\.com/game/.*?/([a-zA-Z0-9]{8,12})(?:[/?#]|$)', url)
-                
-                if match:
-                    game_id = match.group(1)
-                    
-                    # Store the very first ID as a fallback
-                    if not fallback_id:
-                        fallback_id = game_id
-                        
-                    # VERIFICATION: Strip punctuation so "Assassin's Creed" matches "assassins creed"
-                    search_words = [re.sub(r'[^\w]', '', w) for w in game_name.lower().split()]
-                    search_words = [w for w in search_words if w] 
-                    
-                    if all(word in title for word in search_words):
-                        print(f"[AggregatorAgent] Verified title match! Found ID {game_id} for '{game_name}'")
-                        return game_id
-
-            # If no exact title match was found, use the first ID we saw
-            if fallback_id:
-                print(f"[AggregatorAgent] No exact title match. Best guess is ID {fallback_id}")
-                return fallback_id
-
-            print(f"[AggregatorAgent] Could not find a Luna ID for '{game_name}'.")
-            return None
-            
-        except Exception as e:
-            # If rate-limited, wait and retry
-            wait_time = 2 * (attempt + 1)
-            print(f"[AggregatorAgent] Search rate limit hit. Retrying in {wait_time} seconds... (Error: {e})")
-            time.sleep(wait_time)
-            
-    print(f"[AggregatorAgent] Failed to find Luna ID after 3 attempts.")
-    return None
-
-def find_disney_id(show_name: str) -> str:
-    """
-    Uses the DuckDuckGo Search API to find the official Disney+ ID.
-    Extracts the alphanumeric hash at the end of the URL.
-    """
-    print(f"[LanguageAgent] Searching the web for Disney+ ID: '{show_name}'...")
-    
-    # We restrict the search to the main Disney+ domain
-    query = f"site:disneyplus.com {show_name}"
-    
-    import time
-    for attempt in range(3):
-        try:
-            # Initialize the DDGS client
-            search_client = DDGS()
-            
-            # THE FIX: Use backend="html" to bypass the strict API rate limit
-            results = list(search_client.text(query, max_results=5, backend="html"))
-            
-            fallback_id = None
-                
-            for result in results:
-                url = unquote(result.get("href", ""))
-                title = result.get("title", "").lower()
-            
-            # THE FIX 2: Upgraded Regex
-            # - Allows any number of path segments before the ID using (?:[^/]+/)*
-            # - Forces the ID to be the absolute last part of the URL, safely ignoring ?query=strings
-            match = re.search(r'disneyplus\.com/.*?(?:series|movies|video)/(?:[^/]+/)*([a-zA-Z0-9]{8,})(?:[/?#]|$)', url)
-            
-            if match:
-                show_id = match.group(1)
-                
-                # Store the very first ID as a fallback just in case
-                if not fallback_id:
-                    fallback_id = show_id
-                    
-                # VERIFICATION: Strip punctuation so "Avatar:" doesn't fail against "Avatar"
-                search_words = [re.sub(r'[^\w]', '', w) for w in show_name.lower().split()]
-                search_words = [w for w in search_words if w] # Remove any empty strings
-                
-            # If no exact title match was found, use the first ID we saw
-            if fallback_id:
-                print(f"[LanguageAgent] No exact title match. Best guess is ID {fallback_id}")
-                return fallback_id
-
-            print(f"[LanguageAgent] Could not find a Disney+ ID for '{show_name}'.")
-            return None
-            
-        except Exception as e:
-            # If we get rate-limited, wait a few seconds and try again
-            wait_time = 2 * (attempt + 1)
-            print(f"[LanguageAgent] DuckDuckGo rate limit hit. Retrying in {wait_time} seconds... (Error: {e})")
-            time.sleep(wait_time)
-            
-    print(f"[LanguageAgent] Failed to find Disney+ ID after 3 attempts.")
-    return None
-    
-def find_netflix_id(show_name: str) -> str:
-    """
-    Uses the DuckDuckGo Search API to find the official Netflix Show ID.
-    This bypasses the anti-bot blocks triggered by raw HTML scraping.
-    """
-    print(f"[LanguageAgent] Searching the web for Netflix ID: '{show_name}'...")
-    
-    query = f"site:netflix.com/title {show_name}"
-    
-    try:
-        # Initialize the DDGS client
-        search_client = DDGS()
-        
-        # Fetch up to 5 results to give us options
-        results = list(search_client.text(query, max_results=5))
-        
-        fallback_id = None
-            
-        for result in results:
-            url = result.get("href", "")
-            title = result.get("title", "").lower()
-            
-            # The Regex Pattern: Catch IDs of any length (Netflix uses 7, 8, or 9 digits)
-            match = re.search(r'netflix\.com/title/(\d+)', url)
-            
-            if match:
-                show_id = match.group(1)
-                
-                # Store the very first ID as a fallback just in case
-                if not fallback_id:
-                    fallback_id = show_id
-                    
-                # VERIFICATION: Ensure the requested show name is actually in the search result's title!
-                # We split into words to handle variations (e.g. "The Office" matching "The Office (U.S.)")
-                search_words = show_name.lower().split()
-                if all(word in title for word in search_words):
-                    print(f"[LanguageAgent] Verified title match! Found ID {show_id} for '{show_name}'")
-                    return show_id
-
-        # If no exact match was found, use the first Netflix ID we saw
-        if fallback_id:
-            print(f"[LanguageAgent] No exact title match. Best guess is ID {fallback_id}")
-            return fallback_id
-
-        print(f"[LanguageAgent] Could not find a Netflix ID for '{show_name}'.")
-        return None
-            
-    except Exception as e:
-        print(f"[LanguageAgent] Error scraping for ID: {e}")
-        return None
-
 class TclTv(BaseAgent):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("TV", "Actuator")
 
         self.tv_ip = "192.168.1.161"
@@ -193,29 +24,49 @@ class TclTv(BaseAgent):
                          "luna_play_game_by_id": self.play_luna_game,
                          "pause": self.play_pause,
                          "resume": self.play_pause,
-                         "volume_by_percent_level": self.volume_control}
+                         "volume_by_percent_level": self.volume_control,
+                         "home": self.home,
+                         "spotify_play_track_by_id": self.play_spotify_track,
+                         "spotify_next_track": self.spotify_next,
+                         "spotify_prev_track": self.spotify_prev}
 
         self.desc = "TV controlling agent, for all commands that involve playing media go through StreamAggregator first to get corresponding ID to title."
 
         subprocess.run(["adb", "connect", self.tv_ip], capture_output=True)
 
-    async def turn_onoff(self, msg):
+    async def turn_onoff(self, msg: dict) -> None:
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "26"])
 
-    async def volume_control(self, msg):
+    async def volume_control(self, msg: dict) -> None:
         level = msg["params"].get("level", 10)
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "media", "volume", "--stream", "3", "--set", str(level)])
 
-    async def play_pause(self, msg):
+    async def home(self, msg: dict) -> None:
+        subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "3"])
+
+    async def play_pause(self, msg: dict) -> None:
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "85"])
 
-    async def start_disney(self, msg):
+    async def start_disney(self, msg: dict) -> None:
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "start", "-n" "com.disney.disneyplus/com.bamtechmedia.dominguez.main.MainActivity"])
 
-    async def start_netflix(self, msg):
+    async def start_netflix(self, msg: dict) -> None:
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "start", "-n", "com.netflix.ninja/.MainActivity"])
 
-    async def disney_play_show(self, msg):
+    async def play_spotify_track(self, msg: dict) -> None:
+        track_id = msg["params"]["track_id"][0]
+        res = subprocess.run(["adb", 
+                        "shell", "am", "start", "-a", "android.intent.action.VIEW",
+                        "-d", f"spotify:track:{track_id}",
+                        "-p", "com.spotify.tv.android"], capture_output=True, text=True)
+        
+    async def spotify_next(self, msg: dict) -> None:
+        subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "87"])
+
+    async def spotify_prev(self, msg: dict) -> None:
+        subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "88"])
+
+    async def disney_play_show(self, msg: dict) -> None:
         show_id = msg["params"]["show_id"][0]
 
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "start", 
@@ -223,7 +74,7 @@ class TclTv(BaseAgent):
             "-d", f"https://www.disneyplus.com/video/{show_id}", 
             "com.disney.disneyplus"])
 
-    async def netflix_play_show(self, msg):
+    async def netflix_play_show(self, msg: dict) -> None:
         show_id = msg["params"]["show_id"][0]
         print(show_id)
         print(f"playing show {show_id}")
@@ -233,7 +84,7 @@ class TclTv(BaseAgent):
             "-a", "android.intent.action.VIEW", 
             "-e", "amzn_deeplink_data", str(show_id)])
         
-    async def play_luna_game(self, data):
+    async def play_luna_game(self, data: dict) -> None:
         """
         Attempts to launch a specific game on Amazon Luna.
         Expects data["game_id"] to be the alphanumeric string from a Luna web URL.
@@ -292,7 +143,7 @@ class TclTv(BaseAgent):
         await asyncio.sleep(3.0)
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "66"])
 
-async def main():
+async def main() -> None:
     tv = TclTv()
     await tv.run()
 
