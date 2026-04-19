@@ -4,6 +4,8 @@ from typing import Callable, Any, Dict, Optional
 from zeroconf import IPVersion, ServiceStateChange
 from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf, AsyncServiceBrowser
 import zmq.utils.z85
+from loguru import logger
+import sys
 
 def get_local_ip() -> str:
     """get_local_ip -> str
@@ -59,6 +61,8 @@ class Discovery:
         self.new_peer_callback = new_peer_callback
         self.active_peers = {}
 
+        logger.add(sys.stderr, format="{time} {level} {message}", filter=agent_name, level="SUCCESS")
+
     async def start(self) -> None:
         await self.aiozc.async_register_service(self.my_info)
 
@@ -84,12 +88,12 @@ class Discovery:
 
             self.active_peers[name] = peer_data        
             self.new_peer_callback(name, peer_data)
-        print(f"Added {name}")
+        logger.success(f"Added {name}")
 
     async def _handle_lost_peer(self, zc: AsyncZeroconf, type_: str, name: str) -> None:
         if name in self.active_peers:
             del self.active_peers[name]
-            print(f"Lost {name}")
+            logger.warning(f"Lost {name}")
 
     async def stop(self) -> None:
         if self.browser:

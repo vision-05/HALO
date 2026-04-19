@@ -8,6 +8,9 @@ import json
 import inspect
 from typing import Any, Dict, List, Optional, Union
 
+from loguru import logger
+import sys
+
 class BaseAgent:
     """Base Agent implementation"""
     def __init__(self, name: str, role: str) -> None:
@@ -37,6 +40,8 @@ class BaseAgent:
         self.service = Discovery(name, role, self.port, self.public_key, new_peer_callback=self.verify_peer)
         self.network_UUID = None
 
+        logger.add(sys.stderr, format="{time} {level} {message}", filter=self.name, level="SUCCESS")
+
     def verify_peer(self, peername: str, peerdata: Dict[str, Any]) -> None:
         asyncio.create_task(self.verification_prompt(peername, peerdata))
 
@@ -49,14 +54,18 @@ class BaseAgent:
 
     async def verification_prompt(self, peername: str, peerdata: Dict[str, Any]) -> None:
         clean_name = peername.split('.')[0]
-        print(f"{self.name} discovered {peername} at {peerdata['ip']}:{peerdata['port']}")
+        logger.debug(f"{self.name} discovered {peername} at {peerdata['ip']}:{peerdata['port']}")
         #acc_input = input(f"{self.name} Do you accept the connection to {clean_name}? [y/n] ")
         #if acc_input == "n": #comment out in testing
         #    return
         self.connect_peer(clean_name, peerdata)
         
     def connect_peer(self, clean_name: str, peerdata: Dict[str, Any]) -> None:
-        print("Connecting...")
+        logger.debug("Connecting...")
+        if clean_name in self.outbound_socks:
+            old_socket = self.outbound_socks.pop(clean_name)
+            old_socket.close(linger = 0)
+
         self.peers[clean_name] = peerdata
         dealer = self.ctx.socket(zmq.DEALER)
         dealer.setsockopt_string(zmq.IDENTITY, self.name)
@@ -104,8 +113,8 @@ class BaseAgent:
             min_node = min(self.heartbeats, key=self.heartbeats.get)
             max_node = max(self.heartbeats, key=self.heartbeats.get)
 
-            if self.heartbeats[min_node] < time.time() - 30:
-                print(f"pruning {min_node}")
+            if self.heartbeats[min_node] < time.time() - 5:
+                logger.warning(f"Pruned {min_node}")
                 del self.heartbeats[min_node]
                 del self.outbound_socks[min_node]
                 del self.peers[min_node]
@@ -132,8 +141,9 @@ class BaseAgent:
             return [self.inject_wildcards(res, item) for item in new_msg]
 
         elif isinstance(new_msg, str):
-            if new_msg == "$*":
-              return res
+            idx = new_msg.find("$*")
+            if idx != -1:
+              return new_msg.replace("$*", str(res))
             else:
                 return new_msg
         else:
@@ -157,7 +167,7 @@ class BaseAgent:
             try:
                 data = json.loads(frames[1].decode('utf-8'))
                 if data.get("action",None) != "schema":
-                    print(data)
+                    logger.debug(data)
                 if hasattr(self, "handlers"):
                     action = self.handlers.get(data["action"], None)
                     if action is not None:
@@ -168,13 +178,13 @@ class BaseAgent:
                             next_act = data.get("on_success", None)
                             if next_act is not None:
                                 injected = self.inject_wildcards(res, next_act)
-                                print(injected)
-                                print("Sending new message")
+                                logger.debug(injected)
+                                logger.debug("Sending new message")
                                 await self.send_msg(injected["target"], json.dumps(injected))
             except json.JSONDecodeError:
-                print("Failed decode")
+                logger.error("Failed decode")
 
-            print(f"{self.name} received {message_data} from {sender_id}")
+            logger.debug(f"{self.name} received {message_data} from {sender_id}")
 
     def get_handlers(self) -> List[str]:
         return [f"DescriptionStart: {self.desc} DescriptionEnd "] + list(self.handlers.keys())
@@ -192,10 +202,10 @@ class BaseAgent:
                 self.public_key = f.read()
             with open(secret_path, "rb") as f:
                 self.secret_key = f.read()
-            print(f"{self.name} loaded identiy from disk")
+            logger.success(f"{self.name} loaded identiy from disk")
             return
         
-        print(f"Generating")
+        logger.debug(f"Generating")
 
         self.public_key, self.secret_key = zmq.curve_keypair()
 
@@ -205,9 +215,9 @@ class BaseAgent:
         with open(secret_path, "wb") as f:
             f.write(self.secret_key)
 
-        print(f"Generated keypair")
+        logger.success(f"Generated keypair")
 
         try:
             os.chmod(secret_path, 0o600) #private key file perms
-        except:
-            Exception
+        except Exception:
+            logger.error("Failed ot set permissions")

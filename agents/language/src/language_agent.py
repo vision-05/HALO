@@ -26,7 +26,8 @@ class LanguageAgent(BaseAgent):
         self.bot = Bot(telegram_token)
 
         self.pending_peers = {}
-        self.handlers = {"schema": self.get_peer_schema}
+        self.handlers = {"schema": self.get_peer_schema,
+                         "send_chat_message": self.send_message_to_user}
         self.schemas = {}
 
         self.llm = ChatOpenAI(
@@ -56,7 +57,7 @@ class LanguageAgent(BaseAgent):
                                        "source": "yourself",
                                        "params": {"p1": "$*", "p2": "other param"}}
                         }} Where you can pass results of actions as parametsr by the wildcard $* 
-                         Do NOT wrap your response in markdown blocks or include any backticks or the word json """
+                         Do NOT wrap your response in markdown blocks or include any backticks or the word json. If sending a message to chat, you (Claude) must be the recipient. """
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
@@ -81,7 +82,7 @@ class LanguageAgent(BaseAgent):
             # Strip the mention out so Claude just gets the raw command
             text = text.replace(f"@{bot_username}", "").strip()
 
-        response = self.llm.invoke(self.sys_prompt + f"Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + text).content
+        response = self.llm.invoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + text).content
         if response[0] == "`":
             response = response[7:-3]
         human_resp = json.loads(response)
@@ -138,6 +139,13 @@ class LanguageAgent(BaseAgent):
             text=message,
             parse_mode="HTML",
             reply_markup=reply_markup
+        )
+
+    async def send_message_to_user(self, msg) -> None:
+        await self.bot.send_message(
+            chat_id = self.admin_chat_id,
+            text = str(msg["params"]["message"]),
+            parse_mode="HTML"
         )
 
     async def handle_button_press(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

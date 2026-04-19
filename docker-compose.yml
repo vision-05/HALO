@@ -6,11 +6,15 @@ services:
       target: prod
     container_name: halo-language
     network_mode: host
+    volumes:
+      - ./agents/language/src:/app/language/src
+      - ./agents/discovery/src:/app/discovery/src
     environment:
       - CLAUDE_KEY
       - TELEGRAM_KEY
       - TEL_CHAT_ID
       - PYTHONUNBUFFERED=1
+    command: python -m watchfiles 'python /app/language/src/main.py' /app
 
   language-test:
     build:
@@ -65,10 +69,14 @@ services:
       dockerfile: generic/Dockerfile
       target: tv
     network_mode: host
+    volumes:
+      - ./agents/generic/src:/app/generic/src
+      - ./agents/discovery/src:/app/discovery/src
     environment:
       - PYTHONUNBUFFERED=1
       - AGENT_NAME=LivingRoomTV
       - AGENT_ROLE=Actuator
+    command: python -m watchfiles 'python /app/generic/src/tcltv.py' /app
 
   stream:
     build:
@@ -76,10 +84,14 @@ services:
       dockerfile: generic/Dockerfile
       target: stream
     network_mode: host
+    volumes:
+      - ./agents/generic/src:/app/generic/src
+      - ./agents/discovery/src:/app/discovery/src
     environment:
       - PYTHONUNBUFFERED=1
       - AGENT_NAME=StreamingAggregator
       - AGENT_ROLE=Aggregator
+    command: python -m watchfiles 'python /app/generic/src/streaming_agg.py' /app
   
   generic-test:
     build:
@@ -141,4 +153,14 @@ services:
     command: serve -a 0.0.0.0:8000
     volumes:
       - ./:/docs
+  
+  dozzle:
+    image: amir20/dozzle:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dozzle_data:/data
+    ports:
+      - 8080:8080
+volumes:
+  dozzle_data:
       

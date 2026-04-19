@@ -2,3 +2,4 @@ zmq
 zeroconf
 requests
 ddgs
+loguru

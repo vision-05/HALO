@@ -20,7 +20,7 @@ class StreamingAggregator(BaseAgent):
         self.handlers = {"get_id_from_title_and_service": self.get_id_from_title,
                          "explore_shows_by_search_term": self.get_titles_from_search}
 
-        self.desc = "Can fetch Netflix, Disney+ and Luna titles from a given name."
+        self.desc = "Can fetch Netflix, Disney+, Spotify and Luna titles from a given name."
 
     def get_id_from_title(self, msg: dict) -> None:
         """
