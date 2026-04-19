@@ -57,7 +57,9 @@ class LanguageAgent(BaseAgent):
                                        "source": "yourself",
                                        "params": {"p1": "$*", "p2": "other param"}}
                         }} Where you can pass results of actions as parametsr by the wildcard $* 
-                         Do NOT wrap your response in markdown blocks or include any backticks or the word json. If sending a message to chat, you (Claude) must be the recipient. """
+                         Do NOT wrap your response in markdown blocks or include any backticks or the word json. If sending a message to chat, you (Claude) must be the recipient.
+                         Be decisive, when requested an action take it without second confirmation. Be helpful in making decisions and fun if possible. If you are asked to solve a conundrum,
+                         i.e. who should clean the house, come up with a fun, social way to solve it such as inviting everyone to play a game. Take initiative in starting activities. """
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user

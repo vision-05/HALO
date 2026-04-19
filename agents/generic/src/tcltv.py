@@ -8,13 +8,18 @@ import re
 from ddgs import DDGS
 from urllib.parse import unquote
 import time
+from loguru import logger
 
 class TclTv(BaseAgent):
     def __init__(self) -> None:
         super().__init__("TV", "Actuator")
 
         self.tv_ip = "192.168.1.161"
-        self.local_state = {}
+        self.state = {"tv_status": "disconnected",
+                      "media": {"application": None,
+                                "title": None,
+                                "id": None,
+                                "status": None}}
         self.handlers = {"power_on": self.turn_onoff,
                          "power_off": self.turn_onoff,
                          "netflix": self.start_netflix,
@@ -33,19 +38,49 @@ class TclTv(BaseAgent):
         self.desc = "TV controlling agent, for all commands that involve playing media go through StreamAggregator first to get corresponding ID to title."
 
         subprocess.run(["adb", "connect", self.tv_ip], capture_output=True)
+        self.state["tv_status"] = "connected"
+        self.state["power"] = "on"
+
+        res = subprocess.run(["adb", "-s", self.tv_ip, "shell", "dumpsys", "power"],
+                             capture_output=True,
+                             text=True,
+                             timeout=5)
+        
+        output = res.stdout
+
+        if "mWakefulness=Awake" in output:
+            self.state["power"] = "on"
+        elif "mWakefulness=Asleep" in output:
+            self.state["power"] = "off"
+        elif "Display Power: state=ON" in output:
+            self.state["power"] = "on"
+        else:
+            self.state["power"] = "off"
+
+
 
     async def turn_onoff(self, msg: dict) -> None:
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "26"])
+        if self.state["power"] == "on":
+            self.state["power"] = "off"
+        else:
+            self.state["power"] = "on"
 
     async def volume_control(self, msg: dict) -> None:
         level = msg["params"].get("level", 10)
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "media", "volume", "--stream", "3", "--set", str(level)])
+        self.state["volume"] = level
 
     async def home(self, msg: dict) -> None:
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "3"])
+        self.state["media"] = {"application": "home"}
 
     async def play_pause(self, msg: dict) -> None:
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "85"])
+        if self.state["media"]["status"] == "Playing":
+            self.state["media"]["status"] = "Paused"
+        else:
+            self.state["media"]["status"] = "Playing"
 
     async def start_disney(self, msg: dict) -> None:
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "start", "-n" "com.disney.disneyplus/com.bamtechmedia.dominguez.main.MainActivity"])
@@ -60,6 +95,10 @@ class TclTv(BaseAgent):
                         "-d", f"spotify:track:{track_id}",
                         "-p", "com.spotify.tv.android"], capture_output=True, text=True)
         
+        self.state["media"]["application"] = "Spotify"
+        self.state["media"]["id"] = track_id
+        self.state["media"]["status"] = "Playing"
+        
     async def spotify_next(self, msg: dict) -> None:
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "87"])
 
@@ -69,21 +108,51 @@ class TclTv(BaseAgent):
     async def disney_play_show(self, msg: dict) -> None:
         show_id = msg["params"]["show_id"][0]
 
-        subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "start", 
+        res = subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "start", 
             "-a", "android.intent.action.VIEW", 
             "-d", f"https://www.disneyplus.com/video/{show_id}", 
-            "com.disney.disneyplus"])
+            "com.disney.disneyplus"], capture_output=True, text=True)
+        logger.debug(str(res))
 
     async def netflix_play_show(self, msg: dict) -> None:
         show_id = msg["params"]["show_id"][0]
-        print(show_id)
-        print(f"playing show {show_id}")
-        await self.start_netflix(msg)
-        subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "start", 
+        logger.debug(f"[{self.name}] Initiating {show_id}")
+
+        # Define YOUR exact working ADB command from yesterday
+        adb_start_cmd = [
+            "adb", "-s", self.tv_ip, "shell", "am", "start", 
+            "-f", "0x10000020", # <--- THE MISSING LINK
             "-n", "com.netflix.ninja/.MainActivity",
             "-a", "android.intent.action.VIEW", 
-            "-e", "amzn_deeplink_data", str(show_id)])
+            "-e", "amzn_deeplink_data", str(show_id)
+        ]
+
+        # 0. WAKE TV
+        subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "224"])
+        subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "3"])
+        await asyncio.sleep(2.0)
+
+        # 1. FIRST STRIKE: Send the intent to wake the app and hit the profile screen
+        logger.debug(f"[{self.name}] Waking up Netflix...")
+        subprocess.run(adb_start_cmd, capture_output=True)
         
+        # Give it time to hit the profile selection screen
+        await asyncio.sleep(8.0)
+        
+        # 2. SELECT PROFILE: Press 'Enter'
+        logger.debug(f"[{self.name}] Selecting default profile...")
+        subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "66"])
+        
+        # Give the profile time to fully load the home catalog
+        await asyncio.sleep(8.0)
+        
+        # 3. SECOND STRIKE: Send your exact deep-link AGAIN.
+        # Now that the profile is active, it will actually play the show.
+        logger.debug(f"[{self.name}] Sending deep-link to active profile...")
+        res = subprocess.run(adb_start_cmd, capture_output=True, text=True)
+        
+        logger.debug(f"[{self.name}] Final Result: {res}")
+
     async def play_luna_game(self, data: dict) -> None:
         """
         Attempts to launch a specific game on Amazon Luna.

@@ -38,18 +38,34 @@ class BaseAgent:
         self.desc = ""
 
         self.service = Discovery(name, role, self.port, self.public_key, new_peer_callback=self.verify_peer)
+        self.load_state()
         self.network_UUID = None
 
         logger.add(sys.stderr, format="{time} {level} {message}", filter=self.name, level="SUCCESS")
 
+    def load_state(self) -> None:
+        if os.path.exists(f"{self.name}.json"):
+            with open(f"{self.name}.json", "rb") as f:
+                self.state = json.load(f)
+
+    def save_state(self) -> None:
+        with open(f"{self.name}.json", "wb") as f:
+            json.load(self.state)
+
     def verify_peer(self, peername: str, peerdata: Dict[str, Any]) -> None:
         asyncio.create_task(self.verification_prompt(peername, peerdata))
+
+    async def backup(self) -> None:
+        while True:
+            self.save_state()
+            await asyncio.sleep(300.0)
 
     async def run(self) -> None:
         asyncio.create_task(self.broadcast_and_discover())
         asyncio.create_task(self.heartbeat())
         asyncio.create_task(self.prune_network())
         asyncio.create_task(self.expose_handlers())
+        asyncio.create_task(self.backup())
         await self.recv_msg()
 
     async def verification_prompt(self, peername: str, peerdata: Dict[str, Any]) -> None:
@@ -76,6 +92,15 @@ class BaseAgent:
         dealer.curve_serverkey = peerdata['pubkey']
         dealer.connect(f"tcp://{peerdata['ip']}:{peerdata['port']}")
         self.outbound_socks[clean_name] = dealer
+
+    async def subscribe(self) -> None:
+        pass
+
+    async def publish(self) -> None:
+        pass
+
+    def expose_state(self) -> None:
+        pass
     
     async def expose_handlers(self) -> None:
         while True:
@@ -113,7 +138,7 @@ class BaseAgent:
             min_node = min(self.heartbeats, key=self.heartbeats.get)
             max_node = max(self.heartbeats, key=self.heartbeats.get)
 
-            if self.heartbeats[min_node] < time.time() - 5:
+            if self.heartbeats[min_node] < time.time() - 30:
                 logger.warning(f"Pruned {min_node}")
                 del self.heartbeats[min_node]
                 del self.outbound_socks[min_node]
@@ -176,6 +201,10 @@ class BaseAgent:
                         else:
                             res = action(data)
                             next_act = data.get("on_success", None)
+                            failure_act = data.get("on_failure", None)
+                            if res is None and failure_act is not None:
+                                await self.send_msg(failure_act["target"], json.dumps(failure_act))
+                                continue
                             if next_act is not None:
                                 injected = self.inject_wildcards(res, next_act)
                                 logger.debug(injected)

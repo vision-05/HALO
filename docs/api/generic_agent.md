@@ -20,6 +20,9 @@ class Example(BaseAgent):
         self.handlers = {"command_name_1": self.command1,
                          "command_name_2": self.command2}
 
+        self.state = {"power": "on",
+                      "activity": "Sleeping"}
+
     def command1(self, msg: Any) -> Any:
         pass
 
@@ -40,3 +43,6 @@ Commands can return values or just do actions. If a command does return a value,
 
 ## Message passing
 Make sure your description and function describe exactly the flow of data and parameters of each command. The LLM is smart and will try to create chains of actions for you. The only messages you should send are messages to the LLM to convey results that appear spontaneously, changes in state, or to request a list of suitable agents for tasks. This is because we want to avoid hardcoded recipients with a dynamic message.
+
+## State
+Agents store an arbitrary state dictionary. Store any relevant status of the agent or the devices it controls in here, to be requested or broadcast to the network.
