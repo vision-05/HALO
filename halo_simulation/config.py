@@ -8,6 +8,8 @@ DEFAULT_RUN_DAYS = 30
 MESSAGE_BUS_SEND_DELAY = 0.001  # simulated minutes (~60 ms wall-clock equivalent)
 # HTTP /stream: SimPy env.run is chunked so a client disconnect can stop the worker thread.
 STREAM_STOP_CHECK_CHUNK_MINUTES = 120.0  # simulated minutes per env.run slice
+# Optional /stream?demo_wall_seconds=N: sleep after each chunk so the full run lasts ~N wall seconds (human demos).
+DEMO_WALL_SECONDS_MAX = 7200.0
 
 # Negotiation
 MAX_ITERATIONS = 10

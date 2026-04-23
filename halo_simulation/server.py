@@ -13,16 +13,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import queue
 import re
 import sys
 import threading
+import time
 import traceback
 from datetime import datetime, timezone
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
@@ -47,6 +49,7 @@ from halo_simulation.negotiation.message import Message, MessageBus, MessageType
 from halo_simulation.scenarios.base_scenario import BaseScenario
 from halo_simulation.scenarios.carbon_spike import CarbonSpikeScenario
 from halo_simulation.scenarios.device_failure import DeviceFailureScenario
+from halo_simulation.scenarios.cli_bridge import CliBridgeScenario
 from halo_simulation.scenarios.temperature_conflict import TemperatureConflictScenario
 
 _UI_DIR = Path(__file__).resolve().parent / "ui"
@@ -65,7 +68,9 @@ def _describe_message(msg: Message) -> str:
         base = f"Outdoor {pl.get('outdoor_temp_c', pl.get('temperature', '?'))}°C"
         return f"{base}" + (f", {cond}" if cond else "")
     if mt == MessageTypes.NegotiationProposal:
-        return f"Propose {pl.get('proposed_value', '?')} ({pl.get('attribute', '')})"
+        nid = pl.get("negotiation_id", "")
+        nid_s = f" · nid {nid}" if nid else ""
+        return f"Propose {pl.get('proposed_value', '?')} ({pl.get('attribute', '')}){nid_s}"
     if mt == MessageTypes.NegotiationResolved:
         return f"Resolved setpoint {pl.get('final_value', '?')}°C"
     if mt == MessageTypes.NegotiationFailed:
@@ -80,7 +85,8 @@ def _describe_message(msg: Message) -> str:
 
 
 def message_to_public_dict(msg: Message) -> dict[str, Any]:
-    return {
+    pl = msg.payload or {}
+    out: dict[str, Any] = {
         "timestamp": msg.timestamp,
         "sender": msg.sender_id,
         "recipient": msg.recipient_id,
@@ -88,6 +94,10 @@ def message_to_public_dict(msg: Message) -> dict[str, Any]:
         "description": _describe_message(msg),
         "priority": msg.priority,
     }
+    nid = pl.get("negotiation_id")
+    if nid is not None:
+        out["negotiation_id"] = str(nid)
+    return out
 
 
 def negotiation_to_dict(e: NegotiationEvent) -> dict[str, Any]:
@@ -420,12 +430,32 @@ class StreamingDeviceFailureScenario(DeviceFailureScenario):
         self.bus = StreamingMessageBus(self.env, metrics=metrics, emit=emit)
 
 
+class StreamingCliBridgeScenario(CliBridgeScenario):
+    """``cli_bridge`` with SSE-friendly metrics + ``StreamingMessageBus`` (same ``build()`` as base)."""
+
+    def __init__(
+        self,
+        seed: int,
+        days: int,
+        emit: Callable[[str, dict[str, Any]], None],
+        inject_queue: queue.Queue,
+        api_client: Any | None = None,
+    ) -> None:
+        metrics = StreamingMetricsCollector("cli_bridge", emit)
+        BaseScenario.__init__(self, seed, days, metrics)
+        self._inject_queue = inject_queue
+        self._api_client = api_client
+        self._status_reply = queue.Queue(maxsize=4)
+        self.bus = StreamingMessageBus(self.env, metrics=metrics, emit=emit)
+
+
 def create_scenario(
     name: str,
     seed: int,
     days: int,
     emit: Callable[[str, dict[str, Any]], None],
     api_client: Any | None = None,
+    inject_queue: queue.Queue | None = None,
 ) -> BaseScenario:
     if name == "temperature_conflict":
         return StreamingTemperatureConflictScenario(seed, days, emit, api_client=api_client)
@@ -433,6 +463,10 @@ def create_scenario(
         return StreamingCarbonSpikeScenario(seed, days, emit, api_client=api_client)
     if name == "device_failure":
         return StreamingDeviceFailureScenario(seed, days, emit, api_client=api_client)
+    if name == "cli_bridge":
+        if inject_queue is None:
+            raise ValueError("cli_bridge requires inject_queue")
+        return StreamingCliBridgeScenario(seed, days, emit, inject_queue, api_client=api_client)
     raise ValueError(f"Unknown scenario: {name}")
 
 
@@ -443,12 +477,24 @@ def run_simulation_thread(
     emit: Callable[[str, dict[str, Any]], None],
     api_client: Any | None = None,
     stop_requested: threading.Event | None = None,
+    inject_queue: queue.Queue | None = None,
+    demo_wall_seconds: float = 0.0,
 ) -> None:
     try:
         try:
             sim_epoch = api_client.sim_epoch_utc if api_client is not None else datetime.now(timezone.utc)
-            emit("run_start", {"sim_epoch_utc": sim_epoch.isoformat()})
-            sc = create_scenario(scenario_name, seed, days, emit, api_client=api_client)
+            rs: dict[str, Any] = {"sim_epoch_utc": sim_epoch.isoformat()}
+            if demo_wall_seconds > 0:
+                rs["demo_wall_seconds"] = float(demo_wall_seconds)
+            emit("run_start", rs)
+            sc = create_scenario(
+                scenario_name,
+                seed,
+                days,
+                emit,
+                api_client=api_client,
+                inject_queue=inject_queue,
+            )
             sc.build()
             sc.register_all()
             sc.start_processes()
@@ -462,7 +508,18 @@ def run_simulation_thread(
                 next_t = min(sc.env.now + chunk, until)
                 if next_t <= sc.env.now:
                     break
+                t0 = float(sc.env.now)
                 sc.env.run(until=next_t)
+                advanced = float(sc.env.now) - t0
+                if (
+                    demo_wall_seconds > 0.0
+                    and until > 1e-9
+                    and advanced > 1e-12
+                    and not (stop_requested is not None and stop_requested.is_set())
+                ):
+                    delay = demo_wall_seconds * (advanced / until)
+                    if delay > 0:
+                        time.sleep(delay)
 
             if stopped_early:
                 emit(
@@ -505,18 +562,34 @@ async def index() -> FileResponse:
 
 @app.get("/stream")
 async def stream(
-    scenario: str = Query(..., description="temperature_conflict | carbon_spike | device_failure"),
+    scenario: str = Query(
+        ...,
+        description="temperature_conflict | carbon_spike | device_failure | cli_bridge",
+    ),
     days: int = Query(14, ge=1, le=365),
     seed: int = Query(42),
     live_data: bool = False,
+    demo_wall_seconds: float = Query(
+        0.0,
+        ge=0.0,
+        le=float(config.DEMO_WALL_SECONDS_MAX),
+        description="Stretch the full run across this many wall-clock seconds (0 = as fast as possible). "
+        "Use ~60 for CLI human-in-the-loop demos.",
+    ),
 ) -> EventSourceResponse:
-    if scenario not in ("temperature_conflict", "carbon_spike", "device_failure"):
+    if scenario not in ("temperature_conflict", "carbon_spike", "device_failure", "cli_bridge"):
         raise HTTPException(status_code=400, detail="Invalid scenario")
 
     loop = asyncio.get_running_loop()
     q: asyncio.Queue = asyncio.Queue()
 
     emit = make_emit(loop, q)
+
+    inject_queue: queue.Queue | None = None
+    app.state.inject_queue = None
+    if scenario == "cli_bridge":
+        inject_queue = queue.Queue()
+        app.state.inject_queue = inject_queue
 
     api_client: Any | None = None
     if live_data:
@@ -546,6 +619,8 @@ async def stream(
             emit,
             api_client=api_client,
             stop_requested=stop_requested,
+            inject_queue=inject_queue,
+            demo_wall_seconds=float(demo_wall_seconds),
         )
 
     t = threading.Thread(
@@ -569,8 +644,30 @@ async def stream(
             raise
         finally:
             stop_requested.set()
+            app.state.inject_queue = None
 
     return EventSourceResponse(event_generator())
+
+
+@app.post("/api/inject")
+async def inject_message(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Enqueue a human-bridge command for an active ``cli_bridge`` stream (same schema as ``human_bridge`` queue)."""
+    from halo_simulation.human_bridge import validate_queue_item
+
+    item = validate_queue_item(body)
+    if item is None or item.get("op") == "__status__":
+        raise HTTPException(status_code=400, detail="Invalid inject body (see human_bridge contract)")
+    q = getattr(app.state, "inject_queue", None)
+    if q is None:
+        raise HTTPException(
+            status_code=503,
+            detail="No active cli_bridge stream (start GET /stream?scenario=cli_bridge first)",
+        )
+    try:
+        q.put_nowait(item)
+    except queue.Full:
+        raise HTTPException(status_code=503, detail="Inject queue full") from None
+    return {"ok": True, "accepted": item}
 
 
 @app.get("/api/status")

@@ -33,7 +33,8 @@ class BaseScenario(ABC):
 
     def register_all(self) -> None:
         for a in self._agents:
-            self.bus.register(a)
+            if getattr(a, "register_on_bus", True):
+                self.bus.register(a)
 
     def start_processes(self) -> None:
         for a in self._agents:

@@ -24,10 +24,13 @@
     body {
       margin: 0; font-family: system-ui, Segoe UI, Roboto, sans-serif;
       background: var(--bg); color: var(--text); height: 100vh; overflow: hidden;
+      /* Column flex: topbar + optional inject strip + layout must fit in 100vh (fixed calc was too short and clipped the inject row). */
+      display: flex; flex-direction: column;
     }
     #topbar {
       display: flex; align-items: center; gap: 1rem; padding: 0.5rem 1rem;
       background: var(--panel); border-bottom: 1px solid #30363d; flex-wrap: wrap;
+      flex-shrink: 0;
     }
     #topbar h1 { margin: 0; font-size: 1.1rem; letter-spacing: 0.05em; }
     #topbar label { font-size: 0.8rem; color: var(--muted); }
@@ -39,7 +42,9 @@
     #simTime { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--green); }
     #speedNote { font-size: 0.75rem; color: var(--muted); max-width: 18rem; }
     #layout {
-      display: grid; grid-template-columns: 25% 40% 35%; height: calc(100vh - 52px);
+      display: grid; grid-template-columns: 25% 40% 35%;
+      flex: 1;
+      min-height: 0;
     }
     #colLeft { border-right: 1px solid #30363d; overflow-y: auto; padding: 0.5rem; }
     #colMid { display: flex; flex-direction: column; border-right: 1px solid #30363d; min-height: 0; }
@@ -138,6 +143,28 @@
     }
     .weather-source-pill.live { background: #22c55e33; color: #22c55e; }
     .weather-source-pill.synth { background: #484f58; color: #9ca3af; }
+    #humanInjectStrip {
+      display: none; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.75rem;
+      padding: 0.4rem 0.75rem; background: #161b22; border-bottom: 1px solid #30363d;
+      font-size: 0.78rem;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 6;
+      pointer-events: auto;
+    }
+    #humanInjectStrip.visible { display: flex; }
+    #humanInjectStrip .hi-title { font-weight: 700; color: #58a6ff; margin-right: 0.35rem; }
+    #humanInjectStrip input[type="number"] { width: 3.5rem; }
+    #humanInjectStrip input[type="text"] { width: 14rem; font-family: ui-monospace, monospace; font-size: 0.72rem; }
+    #humanInjectStrip button { font-size: 0.72rem; padding: 0.2rem 0.45rem; cursor: pointer; }
+    #humanInjectStrip details.hi-help {
+      flex: 1 1 100%; margin-top: 0.35rem; font-size: 0.72rem; color: var(--muted);
+    }
+    #humanInjectStrip details.hi-help summary { cursor: pointer; color: var(--blue); user-select: none; }
+    #humanInjectStrip details.hi-help ol { margin: 0.35rem 0 0 1.1rem; padding: 0; line-height: 1.45; }
+    #injectFeedback { color: #8b949e; max-width: 36rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #injectFeedback.ok { color: #3fb950; }
+    #injectFeedback.err { color: #f85149; }
   </style>
 </head>
 <body>
@@ -148,10 +175,14 @@
         <option value="temperature_conflict">Temperature Conflict</option>
         <option value="carbon_spike">Carbon Spike</option>
         <option value="device_failure">Device Failure</option>
+        <option value="cli_bridge">CLI Human Bridge (Bob + person_cli)</option>
       </select>
     </label>
-    <label>Days <input type="number" id="days" value="14" min="1" max="365" style="width:4rem" /></label>
+    <label>Days <input type="number" id="days" value="2" min="1" max="365" style="width:4rem" /></label>
     <label>Seed <input type="number" id="seed" value="42" style="width:5rem" /></label>
+    <label title="Wall-clock seconds to stretch the entire simulated run (0 = run at full CPU speed). Use ~60 for human-in-the-loop demos.">Pace (s)
+      <input type="number" id="demoWallSeconds" value="60" min="0" max="7200" step="1" style="width:3.5rem" />
+    </label>
     <span class="live-row">
       <label style="display:inline-flex;align-items:center;gap:0.35rem;cursor:pointer;">
         <input type="checkbox" id="liveDataToggle" />
@@ -166,7 +197,32 @@
     <button type="button" id="stop">Stop</button>
     <span id="simTime">Sim: —:—</span>
     <span id="runStatus" title=""></span>
-    <span id="speedNote">Events are buffered and rendered every 100ms so bursts do not freeze the UI.</span>
+    <span id="speedNote">Pace &gt;0 slows the worker thread between chunks (good for demos). Set 0 for max speed.</span>
+  </div>
+  <div id="humanInjectStrip" aria-label="Human inject for cli_bridge">
+    <span class="hi-title">Human inject (person_cli)</span>
+    <span style="color:var(--muted)">SSE stream must be open (Sim: updates) · same as <code>/api/inject</code></span>
+    <details class="hi-help">
+      <summary>How to use</summary>
+      <ol>
+        <li>Start the API: <code style="user-select:all">PYTHONPATH=. uvicorn halo_simulation.server:app --reload</code> (single worker so stream and inject share one process).</li>
+        <li>Open this page from that server (e.g. <code>http://127.0.0.1:8000</code>) or set <code>&lt;meta name="halo-api-origin" content="http://127.0.0.1:8000"&gt;</code> if the UI is in a preview tab.</li>
+        <li>Scenario <strong>CLI Human Bridge</strong> → <strong>Run</strong>. Wait until <strong>Sim:</strong> shows a time (not —:—).</li>
+        <li><strong>Set preference / Leave / Return</strong> work anytime the stream is open. <strong>Send counter / Send accept</strong> need a negotiation id: after a <strong>NegotiationProposal</strong> to <code>person_cli</code> appears in the feed, click <strong>Use last proposal id</strong> (or copy the <code>nid …</code> snippet).</li>
+        <li>If Sim: still moves but inject says the stream is gone, the run already finished and the UI is draining the last buffered events — click <strong>Run</strong> again.</li>
+        <li><strong>Human-in-the-loop:</strong> use <strong>1–2 Days</strong> and keep <strong>Pace (s)</strong> at <strong>~60</strong> so the run lasts about a minute wall-clock (inject stays open long enough to react). Set Pace to <strong>0</strong> for full-speed batch runs.</li>
+      </ol>
+    </details>
+    <label>°C <input type="number" id="injectPref" step="0.5" min="14" max="28" value="22" /></label>
+    <button type="button" id="injectSetPref">Set preference</button>
+    <button type="button" id="injectLeave">Leave</button>
+    <button type="button" id="injectReturn">Return</button>
+    <label>negotiation id <input type="text" id="injectNid" placeholder="shown in feed as nid …" /></label>
+    <button type="button" id="injectFillNid" title="Last proposal to person_cli">Use last proposal id</button>
+    <label>counter °C <input type="number" id="injectCounterVal" step="0.5" min="14" max="28" value="20.5" style="width:4rem" /></label>
+    <button type="button" id="injectCounter">Send counter</button>
+    <button type="button" id="injectAccept">Send accept</button>
+    <span id="injectFeedback"></span>
   </div>
   <div id="layout">
     <div id="colLeft"></div>
@@ -220,6 +276,7 @@
     const AGENTS = [
       { id: 'person_alice', name: 'Alice', type: 'person', role: 'alice' },
       { id: 'person_bob', name: 'Bob', type: 'person', role: 'bob' },
+      { id: 'person_cli', name: 'CLI', type: 'person', role: 'cli' },
       { id: 'device_thermostat', name: 'Thermostat', type: 'device', role: 'thermostat' },
       { id: 'device_dishwasher', name: 'Dishwasher', type: 'device', role: 'dishwasher' },
       { id: 'specialist_carbon', name: 'Grid Carbon', type: 'specialist', role: 'carbon' },
@@ -229,6 +286,7 @@
       temperature_conflict: ['person_alice','person_bob','device_thermostat','specialist_carbon','specialist_weather'],
       carbon_spike: ['person_alice','person_bob','device_thermostat','device_dishwasher','specialist_carbon','specialist_weather'],
       device_failure: ['person_alice','person_bob','device_thermostat','device_shower','specialist_carbon','specialist_weather'],
+      cli_bridge: ['person_bob','person_cli','device_thermostat','specialist_carbon','specialist_weather'],
     };
 
     const state = {
@@ -237,6 +295,7 @@
       }])),
       alice: { home: true, x: 180, y: 140, pref: 22 },
       bob: { home: true, x: 220, y: 140, pref: 19 },
+      cli: { home: true, x: 180, y: 140, pref: 23 },
       thermo: { setpoint: 20, device_state: 'idle', outdoorHeatingOff: false },
       dishwasher: { state: 'idle' },
       carbon: { value: null, level: '—' },
@@ -248,6 +307,12 @@
       maxSimMinutesForWeatherChart: 0,
       simEpochUtcMs: null,
       weatherSimFcIdxPerPoint: [],
+      /** Scenario slug for the currently open SSE `/stream` (may differ from dropdown if you changed it without re-running). */
+      streamScenario: null,
+      /** Last NegotiationProposal `negotiation_id` where recipient is person_cli. */
+      lastCliProposalId: null,
+      /** Highest sim minute seen on `message` events this run (clock never steps backward). */
+      runSimMinuteMax: -1,
       shower: { state: 'idle' },
       negotiationLine: null,
       metrics: { neg: 0, convSum: 0, convN: 0, satSum: 0, satN: 0 },
@@ -439,8 +504,7 @@
       el.innerHTML = '';
       const allowed = new Set(SCENARIO_AGENTS[state.currentScenario] || []);
       for (const a of AGENTS) {
-        if (a.role === 'dishwasher' && !allowed.has('device_dishwasher')) continue;
-        if (a.role === 'weather' && !allowed.has('specialist_weather')) continue;
+        if (!allowed.has(a.id)) continue;
         const card = document.createElement('div');
         card.className = 'agent-card';
         card.dataset.agentId = a.id;
@@ -577,7 +641,8 @@
         else { dw.setAttribute('fill', '#484f58'); }
       }
 
-      const lr = state.alice.home || state.bob.home;
+      const isCliBridge = state.currentScenario === 'cli_bridge';
+      const lr = (isCliBridge ? state.cli.home : state.alice.home) || state.bob.home;
       document.getElementById('lightLR').setAttribute('fill', lr ? '#f0e060' : '#484f58');
       document.getElementById('lightK').setAttribute('fill', state.bob.home ? '#f0e060' : '#484f58');
 
@@ -585,10 +650,13 @@
       document.getElementById('showerIcon').style.display = showShower ? 'block' : 'none';
 
       const da = document.getElementById('dotAlice');
-      if (state.alice.home) {
+      const cliHome = isCliBridge ? state.cli.home : state.alice.home;
+      if (cliHome) {
         da.setAttribute('opacity', '1');
-        da.setAttribute('cx', state.alice.x);
-        da.setAttribute('cy', state.alice.y);
+        const ax = isCliBridge ? state.cli.x : state.alice.x;
+        const ay = isCliBridge ? state.cli.y : state.alice.y;
+        da.setAttribute('cx', ax);
+        da.setAttribute('cy', ay);
       } else {
         da.setAttribute('opacity', '0.25');
       }
@@ -624,18 +692,94 @@
       };
       const c = colors[type] || colors.default;
       row.style.borderLeftColor = c;
-      row.innerHTML = `<span class="time">${fmtTime(msg.timestamp)}</span> · <strong>${msg.sender}</strong> → ${msg.recipient} · <span class="pill" style="background:${c}33">${type}</span> ${desc || ''}`;
+      const nid = msg.negotiation_id != null && String(msg.negotiation_id).trim() !== ''
+        ? ` <span class="nid-copy" style="user-select:all;font-size:0.7rem;opacity:0.9">nid ${String(msg.negotiation_id)}</span>`
+        : '';
+      row.innerHTML = `<span class="time">${fmtTime(msg.timestamp)}</span> · <strong>${msg.sender}</strong> → ${msg.recipient} · <span class="pill" style="background:${c}33">${type}</span> ${desc || ''}${nid}`;
       feedEl.insertBefore(row, feedEl.firstChild);
       while (feedEl.children.length > 200) feedEl.removeChild(feedEl.lastChild);
     }
 
     const eventQueue = [];
+    /** Incremented on each Run so queued SSE events from a superseded stream are ignored. */
+    let streamRunId = 0;
     let evtSource = null;
     /** True while an SSE sim run is active — blocks idle loadWeatherSeriesChart from clobbering the sim forecast chart. */
     let simStreamActive = false;
 
+    function updateHumanInjectStripVisibility() {
+      const strip = document.getElementById('humanInjectStrip');
+      const sc = document.getElementById('scenario').value;
+      strip.classList.toggle('visible', sc === 'cli_bridge' || state.streamScenario === 'cli_bridge');
+    }
+
+    function injectUiFeedback(msg, cls) {
+      const el = document.getElementById('injectFeedback');
+      el.textContent = msg;
+      el.className = cls || '';
+    }
+
+    function flushEventQueue() {
+      while (eventQueue.length) {
+        const ev = eventQueue.shift();
+        if (ev.runId !== streamRunId) continue;
+        processOneEvent(ev.kind, ev.data);
+      }
+    }
+
+    async function postHumanInject(body) {
+      const scenarioNow = document.getElementById('scenario').value;
+      if (scenarioNow !== 'cli_bridge' && state.streamScenario !== 'cli_bridge') {
+        injectUiFeedback(
+          'Human inject only applies to **CLI Human Bridge**. Pick that scenario, click **Run**, then use the buttons here.',
+          'err',
+        );
+        return;
+      }
+      try {
+        const res = await fetch(haloApiUrl('/api/inject'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        let data = {};
+        try {
+          data = await res.json();
+        } catch (_) {}
+        if (!res.ok) {
+          let d = data && data.detail != null ? data.detail : `HTTP ${res.status}`;
+          if (typeof d !== 'string') d = JSON.stringify(d);
+          if (res.status === 503 && /no active cli_bridge stream/i.test(d)) {
+            d =
+              'No inject queue — the **CLI Human Bridge** stream is not active, or the run **already finished** (common with **14 Days**: the sim ends in a fraction of a second and the server drops the queue). Use **1–2 Days**, click **Run** again, then inject while the status still says Live stream… (not Complete). Single uvicorn worker.';
+          }
+          injectUiFeedback(d, 'err');
+          return;
+        }
+        injectUiFeedback(`OK · ${JSON.stringify(data.accepted != null ? data.accepted : data)}`, 'ok');
+        const acc = data.accepted;
+        if (acc && acc.op === 'set_pref' && typeof acc.value === 'number') {
+          state.cli.pref = acc.value;
+          setAgentCard('person_cli', 'st-home', 'home', acc.value + '°C preferred | ' + (state.cli.home ? 'home' : 'away'));
+          updateFloor();
+        }
+        if (acc && acc.op === 'leave') {
+          state.cli.home = false;
+          setAgentCard('person_cli', 'st-away', 'away', state.cli.pref + '°C preferred');
+          updateFloor();
+        }
+        if (acc && acc.op === 'return') {
+          state.cli.home = true;
+          setAgentCard('person_cli', 'st-home', 'home', state.cli.pref + '°C preferred | home');
+          updateFloor();
+        }
+      } catch (e) {
+        injectUiFeedback(String(e && e.message ? e.message : e), 'err');
+      }
+    }
+
     function enqueue(kind, data) {
-      eventQueue.push({ kind, data });
+      eventQueue.push({ kind, data, runId: streamRunId });
     }
 
     let chartLine, chartBar, chartWeather;
@@ -773,8 +917,16 @@
     function processOneEvent(kind, data) {
       bumpSimForecastTimelineFromEvent(data);
       if (kind === 'message') {
-        document.getElementById('simTime').textContent = 'Sim: ' + fmtTime(data.timestamp);
-        state.bob._minuteOfDay = data.timestamp % MIN_PER_DAY;
+        const tRaw = _numOrNaN(data.timestamp);
+        if (Number.isFinite(tRaw) && tRaw >= state.runSimMinuteMax) {
+          state.runSimMinuteMax = tRaw;
+          // Absolute sim minutes: show day + clock (plain HH:MM looked like a "crash" from 00:00 to 23:59).
+          document.getElementById('simTime').textContent = 'Sim: ' + weatherSimAxisLabel(tRaw);
+          state.bob._minuteOfDay = tRaw % MIN_PER_DAY;
+        }
+        if (data.msg_type === 'NegotiationProposal' && data.recipient === 'person_cli' && data.negotiation_id) {
+          state.lastCliProposalId = String(data.negotiation_id);
+        }
         pushFeed(data, data.description, data.msg_type);
         pulseAgent(data.sender);
         if (data.recipient !== 'broadcast') pulseAgent(data.recipient);
@@ -802,7 +954,9 @@
         const tlab = fmtTime(data.timestamp);
         chartLine.data.labels.push(tlab);
         chartLine.data.datasets[0].data.push(data.final_value);
-        chartLine.data.datasets[1].data.push(prefs.person_alice != null ? prefs.person_alice : null);
+        chartLine.data.datasets[1].data.push(
+          prefs.person_cli != null ? prefs.person_cli : prefs.person_alice != null ? prefs.person_alice : null,
+        );
         chartLine.data.datasets[2].data.push(prefs.person_bob != null ? prefs.person_bob : null);
         chartLine.update('none');
         const it = data.iterations;
@@ -836,10 +990,18 @@
             state.bob.home = v === 'home';
             setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', v, state.bob.pref + '°C preferred');
           }
+          if (id === 'person_cli') {
+            state.cli.home = v === 'home';
+            setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', v, state.cli.pref + '°C preferred');
+          }
         }
-        if (data.state_key === 'preferred_temperature' && typeof v === 'number') {
-          if (id === 'person_alice') { state.alice.pref = v; setAgentCard(id, 'st-home', 'home', v + '°C preferred | ' + (state.alice.home ? 'home' : 'away')); }
-          if (id === 'person_bob') { state.bob.pref = v; setAgentCard(id, 'st-home', 'home', v + '°C preferred | ' + (state.bob.home ? 'home' : 'away')); }
+        if (data.state_key === 'preferred_temperature') {
+          const vNum = typeof v === 'number' && Number.isFinite(v) ? v : parseFloat(String(v));
+          if (Number.isFinite(vNum)) {
+            if (id === 'person_alice') { state.alice.pref = vNum; setAgentCard(id, 'st-home', 'home', vNum + '°C preferred | ' + (state.alice.home ? 'home' : 'away')); }
+            if (id === 'person_bob') { state.bob.pref = vNum; setAgentCard(id, 'st-home', 'home', vNum + '°C preferred | ' + (state.bob.home ? 'home' : 'away')); }
+            if (id === 'person_cli') { state.cli.pref = vNum; setAgentCard(id, 'st-home', 'home', vNum + '°C preferred | ' + (state.cli.home ? 'home' : 'away')); }
+          }
         }
         if (data.state_key === 'device_state') {
           if (id === 'device_thermostat') {
@@ -900,12 +1062,17 @@
     }
 
     setInterval(() => {
-      if (eventQueue.length === 0) return;
-      const ev = eventQueue.shift();
-      processOneEvent(ev.kind, ev.data);
+      while (eventQueue.length > 0) {
+        const ev = eventQueue.shift();
+        if (ev.runId !== streamRunId) continue;
+        processOneEvent(ev.kind, ev.data);
+        break;
+      }
     }, 100);
 
     function resetMetrics() {
+      document.getElementById('simTime').textContent = 'Sim: —:—';
+      state.runSimMinuteMax = -1;
       state.metrics = { neg: 0, convSum: 0, convN: 0, satSum: 0, satN: 0 };
       document.getElementById('mNeg').textContent = '0';
       document.getElementById('mConv').textContent = '—';
@@ -922,7 +1089,12 @@
     }
 
     function startStream() {
-      if (evtSource) { evtSource.close(); evtSource = null; }
+      if (evtSource) {
+        evtSource.close();
+        evtSource = null;
+      }
+      while (eventQueue.length) eventQueue.shift();
+      streamRunId++;
       simStreamActive = true;
       const rs = document.getElementById('runStatus');
       rs.textContent = '';
@@ -932,10 +1104,15 @@
       const scenario = document.getElementById('scenario').value;
       const days = document.getElementById('days').value;
       const seed = document.getElementById('seed').value;
+      const paceRaw = parseFloat(String(document.getElementById('demoWallSeconds').value || '0'));
+      const demoWallSeconds = Number.isFinite(paceRaw) ? Math.max(0, Math.min(7200, paceRaw)) : 0;
       const liveOn = document.getElementById('liveDataToggle').checked;
+      state.streamScenario = scenario;
+      state.lastCliProposalId = null;
       state.currentScenario = scenario;
       buildLeftColumn();
       updateFloor();
+      updateHumanInjectStripVisibility();
 
       if (scenarioHasWeather(scenario)) {
         prepareWeatherChartForSimRun();
@@ -965,23 +1142,80 @@
       if (liveOn) {
         url += '&live_data=true';
       }
+      if (demoWallSeconds > 0) {
+        url += `&demo_wall_seconds=${encodeURIComponent(String(demoWallSeconds))}`;
+      }
       evtSource = new EventSource(url);
 
       evtSource.addEventListener('run_start', e => {
+        if (e.target !== evtSource) return;
         const d = JSON.parse(e.data);
         const ms = Date.parse(d.sim_epoch_utc);
         if (Number.isFinite(ms)) state.simEpochUtcMs = ms;
         if (state.weatherForecastSimCache && state.weatherChartMode === 'sim') updateSimForecastWeatherChart();
       });
-      evtSource.addEventListener('message', e => enqueue('message', JSON.parse(e.data)));
-      evtSource.addEventListener('negotiation', e => enqueue('negotiation', JSON.parse(e.data)));
-      evtSource.addEventListener('failure', e => enqueue('failure', JSON.parse(e.data)));
-      evtSource.addEventListener('learning', e => enqueue('learning', JSON.parse(e.data)));
-      evtSource.addEventListener('agent_state', e => enqueue('agent_state', JSON.parse(e.data)));
-      evtSource.addEventListener('carbon', e => enqueue('carbon', JSON.parse(e.data)));
-      evtSource.addEventListener('weather', e => enqueue('weather', JSON.parse(e.data)));
-      evtSource.addEventListener('api_status', e => enqueue('api_status', JSON.parse(e.data)));
+      evtSource.addEventListener('message', e => {
+        if (e.target !== evtSource) return;
+        enqueue('message', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('negotiation', e => {
+        if (e.target !== evtSource) return;
+        enqueue('negotiation', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('failure', e => {
+        if (e.target !== evtSource) return;
+        enqueue('failure', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('learning', e => {
+        if (e.target !== evtSource) return;
+        enqueue('learning', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('agent_state', e => {
+        if (e.target !== evtSource) return;
+        enqueue('agent_state', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('carbon', e => {
+        if (e.target !== evtSource) return;
+        enqueue('carbon', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('weather', e => {
+        if (e.target !== evtSource) return;
+        enqueue('weather', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('api_status', e => {
+        if (e.target !== evtSource) return;
+        enqueue('api_status', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('open', e => {
+        if (e.target !== evtSource) return;
+        const rs = document.getElementById('runStatus');
+        if (rs && !rs.classList.contains('done')) {
+          rs.textContent =
+            demoWallSeconds > 0
+              ? `Live stream… (pacing ~${demoWallSeconds}s wall)`
+              : 'Live stream…';
+        }
+      });
+      evtSource.addEventListener('stopped', e => {
+        const src = e.target;
+        if (src !== evtSource) return;
+        try {
+          JSON.parse(e.data);
+        } catch (_) {}
+        flushEventQueue();
+        src.close();
+        evtSource = null;
+        simStreamActive = false;
+        state.streamScenario = null;
+        updateHumanInjectStripVisibility();
+        const rs = document.getElementById('runStatus');
+        rs.textContent = 'Stopped (server)';
+        rs.className = 'done';
+        rs.title = '';
+      });
       evtSource.addEventListener('done', e => {
+        const src = e.target;
+        if (src !== evtSource) return;
         const summary = JSON.parse(e.data);
         console.info('Run complete', summary);
         const rs = document.getElementById('runStatus');
@@ -989,9 +1223,12 @@
         rs.textContent = `Complete · ${n} negotiations · outputs saved`;
         rs.className = 'done';
         rs.title = JSON.stringify(summary, null, 2);
-        evtSource.close();
+        flushEventQueue();
+        src.close();
         evtSource = null;
         simStreamActive = false;
+        state.streamScenario = null;
+        updateHumanInjectStripVisibility();
         if (scenarioHasWeather(state.currentScenario)) {
           if (state.weatherForecastSimCache) updateSimForecastWeatherChart();
         } else {
@@ -999,14 +1236,21 @@
         }
       });
       evtSource.addEventListener('error', e => {
-        if (e instanceof MessageEvent && e.data) {
-          try {
-            const d = JSON.parse(e.data);
-            alert('Simulation error:\n' + (d.traceback || ''));
-          } catch (_) {}
-          evtSource.close();
-          evtSource = null;
-          simStreamActive = false;
+        const src = e.target;
+        if (!(src instanceof EventSource)) return;
+        if (src.readyState !== EventSource.CLOSED) return;
+        if (src !== evtSource) return;
+        flushEventQueue();
+        try {
+          src.close();
+        } catch (_) {}
+        simStreamActive = false;
+        state.streamScenario = null;
+        updateHumanInjectStripVisibility();
+        const rs = document.getElementById('runStatus');
+        if (rs && !rs.classList.contains('done')) {
+          rs.textContent = 'Stream error — click Run again';
+          rs.className = 'done';
         }
       });
     }
@@ -1018,6 +1262,8 @@
         evtSource = null;
       }
       simStreamActive = false;
+      state.streamScenario = null;
+      updateHumanInjectStripVisibility();
       while (eventQueue.length) eventQueue.shift();
       const rs = document.getElementById('runStatus');
       rs.textContent = 'Stopped';
@@ -1033,11 +1279,46 @@
       state.currentScenario = e.target.value;
       buildLeftColumn();
       updateFloor();
+      updateHumanInjectStripVisibility();
+      injectUiFeedback('', '');
+    });
+
+    document.getElementById('injectFillNid').addEventListener('click', () => {
+      if (!state.lastCliProposalId) {
+        injectUiFeedback('No proposal to person_cli yet — wait for a NegotiationProposal line in the feed.', 'err');
+        return;
+      }
+      document.getElementById('injectNid').value = state.lastCliProposalId;
+      injectUiFeedback('Filled negotiation id from last proposal to person_cli.', 'ok');
+    });
+    document.getElementById('injectSetPref').addEventListener('click', () => {
+      const v = parseFloat(String(document.getElementById('injectPref').value || '21'));
+      void postHumanInject({ op: 'set_pref', value: v });
+    });
+    document.getElementById('injectLeave').addEventListener('click', () => { void postHumanInject({ op: 'leave' }); });
+    document.getElementById('injectReturn').addEventListener('click', () => { void postHumanInject({ op: 'return' }); });
+    document.getElementById('injectCounter').addEventListener('click', () => {
+      const nid = String(document.getElementById('injectNid').value || '').trim();
+      const val = parseFloat(String(document.getElementById('injectCounterVal').value || '0'));
+      if (!nid) {
+        injectUiFeedback('Negotiation id required — use **Use last proposal id** after a proposal to person_cli, or paste the nid from the feed.', 'err');
+        return;
+      }
+      void postHumanInject({ op: 'send_counter', value: val, negotiation_id: nid });
+    });
+    document.getElementById('injectAccept').addEventListener('click', () => {
+      const nid = String(document.getElementById('injectNid').value || '').trim();
+      if (!nid) {
+        injectUiFeedback('Negotiation id required — **Use last proposal id** or copy nid from the feed.', 'err');
+        return;
+      }
+      void postHumanInject({ op: 'send_accept', negotiation_id: nid });
     });
 
     initCharts();
     buildLeftColumn();
     updateFloor();
+    updateHumanInjectStripVisibility();
     checkApiStatus();
     document.getElementById('weatherChartRefresh').addEventListener('click', loadWeatherSeriesChart);
     requestAnimationFrame(() => {
