@@ -45,12 +45,12 @@ class BaseAgent:
 
     def load_state(self) -> None:
         if os.path.exists(f"{self.name}.json"):
-            with open(f"{self.name}.json", "rb") as f:
+            with open(f"{self.name}.json", "r") as f:
                 self.state = json.load(f)
 
     def save_state(self) -> None:
-        with open(f"{self.name}.json", "wb") as f:
-            json.load(self.state)
+        with open(f"{self.name}.json", "w") as f:
+            json.dump(self.state, f)
 
     def verify_peer(self, peername: str, peerdata: Dict[str, Any]) -> None:
         asyncio.create_task(self.verification_prompt(peername, peerdata))
@@ -138,11 +138,16 @@ class BaseAgent:
             min_node = min(self.heartbeats, key=self.heartbeats.get)
             max_node = max(self.heartbeats, key=self.heartbeats.get)
 
-            if self.heartbeats[min_node] < time.time() - 30:
+            if self.heartbeats[min_node] < time.time() - 10:
                 logger.warning(f"Pruned {min_node}")
                 del self.heartbeats[min_node]
-                del self.outbound_socks[min_node]
-                del self.peers[min_node]
+                old_socket = self.outbound_socks.pop(min_node, None)
+                if old_socket is not None:
+                    old_socket.close(linger=0)
+                self.peers.pop(min_node, None)
+                self.pubkey_lookup.pop(min_node, None)
+                fullname = f"{min_node}._halo._tcp.local."
+                self.service.active_peers.pop(fullname, None)
 
             await asyncio.sleep(0.5)
 

@@ -36,7 +36,7 @@ class HaloServiceListener:
         asyncio.run_coroutine_threadsafe(self.on_lost(zc, type_, name), self.loop)
 
     def update_service(self, zc: AsyncZeroconf, type_: str, name: str) -> None:
-        pass
+        asyncio.run_coroutine_threadsafe(self.on_discovered(zc, type_, name), self.loop)
 
 class Discovery:
     """Discovery"""
@@ -45,6 +45,7 @@ class Discovery:
         self.browser = None
         self.service_type = "_halo._tcp.local."
         self.local_ip = get_local_ip()
+        self.agent_name = agent_name
 
         encoded_key = zmq.utils.z85.encode(public_key)
 
@@ -75,6 +76,8 @@ class Discovery:
     async def _handle_new_peer(self, zc: AsyncZeroconf, type_: str, name: str) -> None:
         if name == self.my_info.name:
             return
+        
+        logger.debug(f"Detected {name}")
         
         info = await self.aiozc.async_get_service_info(type_, name)
         if info:
