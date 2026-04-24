@@ -1,0 +1,32 @@
+{
+    "wake_up_patterns": {
+        "weekday_average_hour": 6.55,
+        "saturday_average_hour": 9.46,
+        "sunday_average_hour": 6.54
+    },
+    "weekday_occupancy_pattern": {
+        "usual_leave_hour": 8.0,
+        "usual_return_hour": 16.49
+    },
+    "heating_preferences": {
+        "Winter": "22",
+        "Spring": "21"
+    },
+    "family_movie_night": {
+        "usually_happens": true,
+        "most_common_start_hour": 20.42
+    },
+    "dog_walking_habits": {
+        "saturday_walk_frequency": 45,
+        "sunday_walk_frequency": 46,
+        "common_evening_walk_hour": 17.53
+    },
+    "grocery_shopping": {
+        "usually_on_sunday": true,
+        "common_shopping_hour": 15.48
+    },
+    "dance_class": {
+        "usually_on_sunday": true,
+        "common_start_hour": 7.69
+    }
+}
