@@ -13,14 +13,14 @@ import asyncio
 import json
 
 from discovery.src.base_agent import BaseAgent
-from language_agent import LanguageAgent
+from language_agent import TelegramAgent
 
 lang_agent = None
 
 
 async def start_mesh(application: Application) -> None:
     global lang_agent
-    lang_agent = LanguageAgent(TELEGRAM_BOT_KEY, TELEGRAM_CHAT_ID) 
+    lang_agent = TelegramAgent(TELEGRAM_BOT_KEY, TELEGRAM_CHAT_ID) 
 
     asyncio.create_task(lang_agent.broadcast_and_discover())
     asyncio.create_task(lang_agent.heartbeat())

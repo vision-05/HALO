@@ -14,10 +14,50 @@ import uuid
 import requests
 import re
 import os
+from loguru import logger
 CLAUDE_API_KEY = os.environ['CLAUDE_KEY']
 
-
 class LanguageAgent(BaseAgent):
+    def __init__(self, name, role):
+        super().__init__(name, role)
+
+        self.llm = ChatOpenAI(
+            model='bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0',
+            temperature=0.7,
+            max_tokens=1024,
+            api_key=CLAUDE_API_KEY,
+            base_url='https://litellm.prod.outshift.ai/'
+        )
+
+        self.sys_prompt = ""
+
+    async def self_prompt(self, msg: dict):
+        logger.debug(f"Message: {msg}")
+        instruction = msg["params"].get("instruction", None)
+        if instruction is None:
+            instruction = msg["params"].get("prompt", None) 
+        if instruction is None:
+            instruction = msg["params"].get("task", None)
+        logger.debug(f"======={instruction}")
+        response = self.llm.invoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}, the following is the instruction you gave yourself, interpret it with high priority: " + f"{instruction}. ").content
+
+        if response[0] == "`":
+            response = response[7:-3]
+        human_resp = json.loads(response)
+        net_commands = human_resp.get("network_payload", None)
+        print(net_commands)
+        commands = net_commands
+
+        if not isinstance(net_commands, List):
+            commands = [net_commands]
+
+        target = commands[0].get("target", None)
+        if target is not None:
+            for command in commands:
+                await self.send_msg(command["target"], json.dumps(command))
+
+
+class TelegramAgent(LanguageAgent):
     def __init__(self, telegram_token: str, admin_chat_id: str) -> None:
         super().__init__("Claude", "Language")
         self.telegram_token = telegram_token
@@ -27,16 +67,9 @@ class LanguageAgent(BaseAgent):
 
         self.pending_peers = {}
         self.handlers = {"schema": self.get_peer_schema,
-                         "send_chat_message": self.send_message_to_user}
+                         "send_chat_message": self.send_message_to_user,
+                         "self_prompt": self.self_prompt}
         self.schemas = {}
-
-        self.llm = ChatOpenAI(
-            model='bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0',
-            temperature=0.7,
-            max_tokens=1024,
-            api_key=CLAUDE_API_KEY,
-            base_url='https://litellm.prod.outshift.ai/'
-        )
 
         self.sys_prompt = """You are a HALO management assistant. You must process the user's request and output your response ONLY as a raw JSON object. Do not include markdown formatting or conversational filler outside the JSON.
 
@@ -59,7 +92,11 @@ class LanguageAgent(BaseAgent):
                         }} Where you can pass results of actions as parametsr by the wildcard $* 
                          Do NOT wrap your response in markdown blocks or include any backticks or the word json. If sending a message to chat, you (Claude) must be the recipient.
                          Be decisive, when requested an action take it without second confirmation. Be helpful in making decisions and fun if possible. If you are asked to solve a conundrum,
-                         i.e. who should clean the house, come up with a fun, social way to solve it such as inviting everyone to play a game. Take initiative in starting activities. """
+                         i.e. who should clean the house, come up with a fun, social way to solve it such as inviting everyone to play a game. Take initiative in starting activities.
+                         Default to self prompting to figure out answers if you have questions. Self prompt takes the entire future message chain json object.
+                         Create a message chain with what you expect the actions to be, and inject the self prompt to occur after the relevant data is fetched. MAKE SURE TO INCLUDE WILDCARDS IN THE PROMPT.
+                         Besides your own capabilities, every other agent on the network is "dumb" and should be assumed to only blindly retrieve data or complete an action. To suggest a "next_action", still use the key "on_success" as it will trigger automatically without specified failure.
+                         CRITICAL: If you are continuing a chain and are about to be done, i.e. finished analysis, coming up with a plan/recommendation, send to the chat and do not self prompt. """
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user

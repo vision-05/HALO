@@ -58,7 +58,7 @@ class BaseAgent:
     async def backup(self) -> None:
         while True:
             self.save_state()
-            await asyncio.sleep(300.0)
+            await asyncio.sleep(5.0)
 
     async def run(self) -> None:
         asyncio.create_task(self.broadcast_and_discover())
@@ -138,7 +138,7 @@ class BaseAgent:
             min_node = min(self.heartbeats, key=self.heartbeats.get)
             max_node = max(self.heartbeats, key=self.heartbeats.get)
 
-            if self.heartbeats[min_node] < time.time() - 10:
+            if self.heartbeats[min_node] < time.time() - 30:
                 logger.warning(f"Pruned {min_node}")
                 del self.heartbeats[min_node]
                 old_socket = self.outbound_socks.pop(min_node, None)
@@ -155,6 +155,8 @@ class BaseAgent:
         """Fetch the dealer corresponding to the destination agent and send the message"""
         dealer = self.outbound_socks.get(dest)
         if not dealer:
+            if dest == self.name:
+                await self.handle_msg(payload.encode('utf-8'), self.name)
             return
         
         payload = payload.encode('utf-8')
@@ -178,6 +180,37 @@ class BaseAgent:
                 return new_msg
         else:
             return new_msg
+        
+    async def handle_msg(self, message_data, sender_id):
+        if message_data == b"heartbeat":
+            self.heartbeats[sender_id] = time.time()
+            return
+
+        try:
+            data = json.loads(message_data.decode('utf-8'))
+            if data.get("action",None) != "schema":
+                logger.debug(data)
+            if hasattr(self, "handlers"):
+                action = self.handlers.get(data["action"], None)
+                if action is not None:
+                    if inspect.iscoroutinefunction(action):
+                        await action(data)
+                    else:
+                        res = action(data)
+                        next_act = data.get("on_success", None)
+                        failure_act = data.get("on_failure", None)
+                        if res is None and failure_act is not None:
+                            await self.send_msg(failure_act["target"], json.dumps(failure_act))
+                            return
+                        if next_act is not None:
+                            injected = self.inject_wildcards(res, next_act)
+                            logger.debug(injected)
+                            logger.debug("Sending new message")
+                            await self.send_msg(injected["target"], json.dumps(injected))
+        except json.JSONDecodeError:
+            logger.error("Failed decode")
+
+        logger.debug(f"{self.name} received {message_data} from {sender_id}")
 
     async def recv_msg(self) -> None:
         """Receive messages from the network, running constantly for agent lifetime. Encodes input string to utf-8 for sending to other agents"""
@@ -190,35 +223,7 @@ class BaseAgent:
 
             message_data = frames[1]
 
-            if frames[1] == b"heartbeat":
-                self.heartbeats[sender_id] = time.time()
-                continue
-
-            try:
-                data = json.loads(frames[1].decode('utf-8'))
-                if data.get("action",None) != "schema":
-                    logger.debug(data)
-                if hasattr(self, "handlers"):
-                    action = self.handlers.get(data["action"], None)
-                    if action is not None:
-                        if inspect.iscoroutinefunction(action):
-                            await action(data)
-                        else:
-                            res = action(data)
-                            next_act = data.get("on_success", None)
-                            failure_act = data.get("on_failure", None)
-                            if res is None and failure_act is not None:
-                                await self.send_msg(failure_act["target"], json.dumps(failure_act))
-                                continue
-                            if next_act is not None:
-                                injected = self.inject_wildcards(res, next_act)
-                                logger.debug(injected)
-                                logger.debug("Sending new message")
-                                await self.send_msg(injected["target"], json.dumps(injected))
-            except json.JSONDecodeError:
-                logger.error("Failed decode")
-
-            logger.debug(f"{self.name} received {message_data} from {sender_id}")
+            await self.handle_msg(message_data, sender_id)
 
     def get_handlers(self) -> List[str]:
         return [f"DescriptionStart: {self.desc} DescriptionEnd "] + list(self.handlers.keys())

@@ -17,10 +17,16 @@ class StreamingAggregator(BaseAgent):
                         "disney+": r'disneyplus\.com/.*?(?:series|movies|video)/(?:[^/]+/)*([a-zA-Z0-9]{8,})(?:[/?#]|$)',
                         "spotify": r'open\.spotify\.com/track/([a-zA-Z0-9]{22})(?:[/?#]|$)'}
         
-        self.handlers = {"get_id_from_title_and_service": self.get_id_from_title,}
+        self.handlers = {"get_id_from_title_and_service": self.get_id_from_title,
+                         "get_search_history": self.get_search_history}
                          #"explore_shows_by_search_term": self.get_titles_from_search}
 
         self.desc = "Can fetch Netflix, Disney+, Spotify and Luna titles from a given name."
+
+        self.state = {"searched_shows": []}
+
+    def get_search_history(self, msg: dict) -> None:
+        return self.state["searched_shows"]
 
     def get_id_from_title(self, msg: dict) -> None:
         """
@@ -29,6 +35,7 @@ class StreamingAggregator(BaseAgent):
         """
 
         show_name = msg["params"]["title"].lower()
+        self.state["searched_shows"].append(show_name)
         site = msg["params"]["service"].lower()
     
         query = f"{self.urls[site]} {show_name}"
