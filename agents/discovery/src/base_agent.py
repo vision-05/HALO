@@ -6,7 +6,9 @@ import os
 import time
 import json
 import inspect
+import datetime
 from typing import Any, Dict, List, Optional, Union
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from loguru import logger
 import sys
@@ -37,6 +39,8 @@ class BaseAgent:
         self.handlers = {}
         self.desc = ""
 
+        self.scheduler = AsyncIOScheduler()
+
         self.service = Discovery(name, role, self.port, self.public_key, new_peer_callback=self.verify_peer)
         self.load_state()
         self.network_UUID = None
@@ -66,6 +70,8 @@ class BaseAgent:
         asyncio.create_task(self.prune_network())
         asyncio.create_task(self.expose_handlers())
         asyncio.create_task(self.backup())
+
+        self.scheduler.start()
         await self.recv_msg()
 
     async def verification_prompt(self, peername: str, peerdata: Dict[str, Any]) -> None:
@@ -181,32 +187,57 @@ class BaseAgent:
         else:
             return new_msg
         
+    async def run_task(self, data, sender_id):
+        if data.get("action",None) != "schema":
+            logger.debug("Running task now")
+        if hasattr(self, "handlers"):
+            action = self.handlers.get(data["action"], None)
+            if action is not None:
+                if inspect.iscoroutinefunction(action):
+                    await action(data)
+                else:
+                    res = action(data)
+                    next_act = data.get("on_success", None)
+                    failure_act = data.get("on_failure", None)
+                    if res is None and failure_act is not None:
+                        await self.send_msg(failure_act["target"], json.dumps(failure_act))
+                        return
+                    if next_act is not None:
+                        injected = self.inject_wildcards(res, next_act)
+                        logger.debug(injected)
+                        logger.debug("Sending new message")
+                        await self.send_msg(injected["target"], json.dumps(injected))
+
     async def handle_msg(self, message_data, sender_id):
         if message_data == b"heartbeat":
             self.heartbeats[sender_id] = time.time()
             return
 
         try:
+            run_time = datetime.datetime.now() + datetime.timedelta(seconds=1)
             data = json.loads(message_data.decode('utf-8'))
-            if data.get("action",None) != "schema":
-                logger.debug(data)
-            if hasattr(self, "handlers"):
-                action = self.handlers.get(data["action"], None)
-                if action is not None:
-                    if inspect.iscoroutinefunction(action):
-                        await action(data)
-                    else:
-                        res = action(data)
-                        next_act = data.get("on_success", None)
-                        failure_act = data.get("on_failure", None)
-                        if res is None and failure_act is not None:
-                            await self.send_msg(failure_act["target"], json.dumps(failure_act))
-                            return
-                        if next_act is not None:
-                            injected = self.inject_wildcards(res, next_act)
-                            logger.debug(injected)
-                            logger.debug("Sending new message")
-                            await self.send_msg(injected["target"], json.dumps(injected))
+            if data.get("delay", None) is not None:
+                run_time = datetime.datetime.now() + datetime.timedelta(seconds=data["delay"])
+                self.scheduler.add_job(
+                    self.run_task,
+                    trigger='date',
+                    run_date=run_time,
+                    args=[data, sender_id] # FIX: Used correct sender_id
+                )
+                logger.debug(f"[{self.name}] Task delayed. Scheduled for {run_time}")
+                
+            elif data.get("time", None) is not None:
+                run_time = datetime.datetime.strptime(data["time"], '%b %d %Y %I:%M%p')
+                self.scheduler.add_job(
+                    self.run_task,
+                    trigger='date',
+                    run_date=run_time,
+                    args=[data, sender_id] # FIX: Used correct sender_id
+                )
+                logger.debug(f"[{self.name}] Task scheduled for exact time: {run_time}")
+                
+            else:
+                await self.run_task(data, sender_id)
         except json.JSONDecodeError:
             logger.error("Failed decode")
 

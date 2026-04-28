@@ -3,3 +3,4 @@ zeroconf
 pytest
 pytest-asyncio
 loguru
+apscheduler

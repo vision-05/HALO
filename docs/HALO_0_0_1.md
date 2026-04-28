@@ -65,4 +65,16 @@ When other agents detect the mDNS broadcast of a new agent, one will prompt the 
 ## Semantic agents
 Requests trigger RL rewards.
 
+## Action chains
+The schema for actions is defined:
+
+{"action": "val",
+ "target": "target",
+ "source": "source",
+ "params": {"param1": "value"},
+ "on_success": {"action": "action",},
+ "on_failure": "name",
+ "schedule": "+5s",
+ "repeat": "2x"}
+
 

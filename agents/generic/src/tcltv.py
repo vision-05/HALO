@@ -89,11 +89,15 @@ class TclTv(BaseAgent):
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "start", "-n", "com.netflix.ninja/.MainActivity"])
 
     async def play_spotify_track(self, msg: dict) -> None:
-        track_id = msg["params"]["track_id"][0]
+        track_id = msg["params"]["track_id"]
+        if track_id[0] == '[':
+            track_id = track_id[1:-1]
         res = subprocess.run(["adb", 
                         "shell", "am", "start", "-a", "android.intent.action.VIEW",
                         "-d", f"spotify:track:{track_id}",
                         "-p", "com.spotify.tv.android"], capture_output=True, text=True)
+        
+        logger.debug(res)
         
         self.state["media"]["application"] = "Spotify"
         self.state["media"]["id"] = track_id

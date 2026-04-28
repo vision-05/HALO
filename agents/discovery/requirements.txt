@@ -1,3 +1,4 @@
 zmq
 zeroconf
 loguru
+apscheduler

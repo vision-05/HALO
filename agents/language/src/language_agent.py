@@ -78,11 +78,13 @@ class TelegramAgent(LanguageAgent):
                         "telegram_reply": "The friendly, human-readable message to send to the user",
                         "network_payload": {
                         "action": "the actuation",
+                        "delay": 5,
                         "target": "the target",
                         "source": "yourself",
                         "params": {"p1": "dict of params", "p2": "more params"},
                         "on_success": {"action": "next action",
                                        "target": "the next target",
+                                       "time": "time in following format %b %d %Y %I:%M%p",
                                        "source": "yourself",
                                        "params": {"p1": "$*", "p2": "other param"}},
                         "on_failure": {"action": "next action",
@@ -90,6 +92,7 @@ class TelegramAgent(LanguageAgent):
                                        "source": "yourself",
                                        "params": {"p1": "$*", "p2": "other param"}}
                         }} Where you can pass results of actions as parametsr by the wildcard $* 
+                         You can either give a delay in seconds, or a datetime in the specified '%b %d %Y %I:%M%p' format to schedule all events from when they are received by the target. If you want an action to happen immediately, a delay of 0.5 seconds is a good default.
                          Do NOT wrap your response in markdown blocks or include any backticks or the word json. If sending a message to chat, you (Claude) must be the recipient.
                          Be decisive, when requested an action take it without second confirmation. Be helpful in making decisions and fun if possible. If you are asked to solve a conundrum,
                          i.e. who should clean the house, come up with a fun, social way to solve it such as inviting everyone to play a game. Take initiative in starting activities.

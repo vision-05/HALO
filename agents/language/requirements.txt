@@ -8,3 +8,4 @@ python-telegram-bot
 zmq
 zeroconf
 loguru
+apscheduler
