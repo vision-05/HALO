@@ -36,7 +36,9 @@ class BaseAgent:
         self.pubkey_lookup = {}
         self.state = {}
         self.heartbeats = {}
-        self.handlers = {}
+        self.handlers = {"upsert_state": self.receive_state,
+                         "get_state_keys": self.get_state_schema,
+                         "fetch_state_by_keys": self.get_state_by_keys}
         self.desc = ""
 
         self.scheduler = AsyncIOScheduler()
@@ -46,6 +48,20 @@ class BaseAgent:
         self.network_UUID = None
 
         logger.add(sys.stderr, format="{time} {level} {message}", filter=self.name, level="SUCCESS")
+
+    def register_handlers(self, handlers):
+        self.handlers.update(handlers)
+
+    def get_state_by_keys(self, msg):
+        """Safely fetches multiple keys and returns them as a dictionary."""
+        keys = msg.get("params", {}).get("keys", [])
+        logger.debug(f"State with keys {keys}")
+        if isinstance(keys, str):
+            keys = [keys]
+        if isinstance(keys, list):
+            return {k: self.state.get(k) for k in keys}
+            
+        return {}
 
     def load_state(self) -> None:
         if os.path.exists(f"{self.name}.json"):
@@ -58,6 +74,12 @@ class BaseAgent:
 
     def verify_peer(self, peername: str, peerdata: Dict[str, Any]) -> None:
         asyncio.create_task(self.verification_prompt(peername, peerdata))
+
+    def receive_state(self, msg):
+        logger.debug(msg)
+
+    def get_state_schema(self, msg):
+        return list(self.state.keys())
 
     async def backup(self) -> None:
         while True:
@@ -108,6 +130,9 @@ class BaseAgent:
     def expose_state(self) -> None:
         pass
     
+    async def on_peer_dead(self, peer_name) -> None:
+        pass
+
     async def expose_handlers(self) -> None:
         while True:
             await self.send_msg("Claude", json.dumps({"action": "schema", self.name: self.get_handlers()}))
@@ -154,6 +179,7 @@ class BaseAgent:
                 self.pubkey_lookup.pop(min_node, None)
                 fullname = f"{min_node}._halo._tcp.local."
                 self.service.active_peers.pop(fullname, None)
+                await self.on_peer_dead(min_node)
 
             await asyncio.sleep(0.5)
 
@@ -217,14 +243,8 @@ class BaseAgent:
             run_time = datetime.datetime.now() + datetime.timedelta(seconds=1)
             data = json.loads(message_data.decode('utf-8'))
             if data.get("delay", None) is not None:
-                run_time = datetime.datetime.now() + datetime.timedelta(seconds=data["delay"])
-                self.scheduler.add_job(
-                    self.run_task,
-                    trigger='date',
-                    run_date=run_time,
-                    args=[data, sender_id] # FIX: Used correct sender_id
-                )
-                logger.debug(f"[{self.name}] Task delayed. Scheduled for {run_time}")
+                await asyncio.sleep(data["delay"])
+                await self.run_task(data, sender_id)
                 
             elif data.get("time", None) is not None:
                 run_time = datetime.datetime.strptime(data["time"], '%b %d %Y %I:%M%p')
@@ -241,7 +261,8 @@ class BaseAgent:
         except json.JSONDecodeError:
             logger.error("Failed decode")
 
-        logger.debug(f"{self.name} received {message_data} from {sender_id}")
+        if b"schema" not in message_data:
+            logger.debug(f"{self.name} received {message_data} from {sender_id}")
 
     async def recv_msg(self) -> None:
         """Receive messages from the network, running constantly for agent lifetime. Encodes input string to utf-8 for sending to other agents"""

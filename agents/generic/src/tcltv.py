@@ -20,7 +20,7 @@ class TclTv(BaseAgent):
                                 "title": None,
                                 "id": None,
                                 "status": None}}
-        self.handlers = {"power_on": self.turn_onoff,
+        self.register_handlers({"power_on": self.turn_onoff,
                          "power_off": self.turn_onoff,
                          "netflix": self.start_netflix,
                          "netflix_play_show_by_id": self.netflix_play_show,
@@ -33,7 +33,7 @@ class TclTv(BaseAgent):
                          "home": self.home,
                          "spotify_play_track_by_id": self.play_spotify_track,
                          "spotify_next_track": self.spotify_next,
-                         "spotify_prev_track": self.spotify_prev}
+                         "spotify_prev_track": self.spotify_prev})
 
         self.desc = "TV controlling agent, for all commands that involve playing media go through StreamAggregator first to get corresponding ID to title."
 
@@ -56,6 +56,11 @@ class TclTv(BaseAgent):
             self.state["power"] = "on"
         else:
             self.state["power"] = "off"
+
+    def sanititze(self, title):
+        if title[0] == '[':
+            return title[1:-1]
+        return title
 
 
 
@@ -90,8 +95,7 @@ class TclTv(BaseAgent):
 
     async def play_spotify_track(self, msg: dict) -> None:
         track_id = msg["params"]["track_id"]
-        if track_id[0] == '[':
-            track_id = track_id[1:-1]
+        track_id = self.sanititze(track_id)
         res = subprocess.run(["adb", 
                         "shell", "am", "start", "-a", "android.intent.action.VIEW",
                         "-d", f"spotify:track:{track_id}",
@@ -119,7 +123,8 @@ class TclTv(BaseAgent):
         logger.debug(str(res))
 
     async def netflix_play_show(self, msg: dict) -> None:
-        show_id = msg["params"]["show_id"][0]
+        show_id = msg["params"]["show_id"]
+        show_id = self.sanitize(show_id)
         logger.debug(f"[{self.name}] Initiating {show_id}")
 
         # Define YOUR exact working ADB command from yesterday
@@ -164,7 +169,8 @@ class TclTv(BaseAgent):
         Example: https://luna.amazon.com/game/fortnite/B09M... -> ID is "B09M..."
         """
 
-        game_id = data["params"]["game_id"][0]
+        game_id = data["params"]["game_id"]
+        game_id = self.sanititze(game_id)
     
         if not game_id:
             print(f"[{self.name}] Error: play_luna_game requires a game_id")

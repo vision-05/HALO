@@ -1,0 +1,6 @@
+zmq
+zeroconf
+requests
+loguru
+apscheduler
+docker

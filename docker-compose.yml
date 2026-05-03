@@ -16,6 +16,18 @@ services:
       - PYTHONUNBUFFERED=1
     command: python -m watchfiles 'python /app/language/src/main.py' /app
 
+  simulation:
+    build:
+      context: ./halo_simulation
+    volumes:
+     - ./halo_simulation:/app
+    environment:
+      - PYTHONPATH=.
+    ports:
+      - 8000:8000
+    command: python -m uvicorn halo_simulation.server:app --host 127.0.0.1 --port 8000
+
+
   language-test:
     build:
       context: ./agents
@@ -142,6 +154,22 @@ services:
       - ./agents/discovery/src:/app/discovery/src
     stdin_open: true
     tty: true
+
+  halo-watchdog:
+    build: 
+      context: .
+      dockerfile: agents/watchdog/Dockerfile
+      target: prod
+    container_name: halo-watchdog
+    network_mode: "host"
+    restart: unless-stopped
+    volumes:
+      # THE WORMHOLE: Gives the container God-mode over the host's Docker daemon
+      - /var/run/docker.sock:/var/run/docker.sock 
+      
+      # Optional: Hot-reload mounts for development
+      - ./agents/discovery/src:/app/discovery/src
+      - ./agents/watchdog/src:/app/watchdog/src
 
   docs:
     build:

@@ -17,8 +17,8 @@ class StreamingAggregator(BaseAgent):
                         "disney+": r'disneyplus\.com/.*?(?:series|movies|video)/(?:[^/]+/)*([a-zA-Z0-9]{8,})(?:[/?#]|$)',
                         "spotify": r'open\.spotify\.com/track/([a-zA-Z0-9]{22})(?:[/?#]|$)'}
         
-        self.handlers = {"get_id_from_title_and_service": self.get_id_from_title,
-                         "get_search_history": self.get_search_history}
+        self.register_handlers({"get_id_from_title_and_service": self.get_id_from_title,
+                         "get_search_history": self.get_search_history})
                          #"explore_shows_by_search_term": self.get_titles_from_search}
 
         self.desc = "Can fetch Netflix, Disney+, Spotify and Luna titles from a given name."

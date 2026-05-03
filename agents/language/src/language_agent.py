@@ -39,13 +39,12 @@ class LanguageAgent(BaseAgent):
         if instruction is None:
             instruction = msg["params"].get("task", None)
         logger.debug(f"======={instruction}")
-        response = self.llm.invoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}, the following is the instruction you gave yourself, interpret it with high priority: " + f"{instruction}. ").content
-
+        response = await self.llm.ainvoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}, the following is the instruction you gave yourself, interpret it with high priority: " + f"{instruction}. ")
+        response = response.content
         if response[0] == "`":
             response = response[7:-3]
         human_resp = json.loads(response)
         net_commands = human_resp.get("network_payload", None)
-        print(net_commands)
         commands = net_commands
 
         if not isinstance(net_commands, List):
@@ -66,9 +65,9 @@ class TelegramAgent(LanguageAgent):
         self.bot = Bot(telegram_token)
 
         self.pending_peers = {}
-        self.handlers = {"schema": self.get_peer_schema,
+        self.register_handlers({"schema": self.get_peer_schema,
                          "send_chat_message": self.send_message_to_user,
-                         "self_prompt": self.self_prompt}
+                         "self_prompt": self.self_prompt})
         self.schemas = {}
 
         self.sys_prompt = """You are a HALO management assistant. You must process the user's request and output your response ONLY as a raw JSON object. Do not include markdown formatting or conversational filler outside the JSON.
@@ -99,7 +98,8 @@ class TelegramAgent(LanguageAgent):
                          Default to self prompting to figure out answers if you have questions. Self prompt takes the entire future message chain json object.
                          Create a message chain with what you expect the actions to be, and inject the self prompt to occur after the relevant data is fetched. MAKE SURE TO INCLUDE WILDCARDS IN THE PROMPT.
                          Besides your own capabilities, every other agent on the network is "dumb" and should be assumed to only blindly retrieve data or complete an action. To suggest a "next_action", still use the key "on_success" as it will trigger automatically without specified failure.
-                         CRITICAL: If you are continuing a chain and are about to be done, i.e. finished analysis, coming up with a plan/recommendation, send to the chat and do not self prompt. """
+                         CRITICAL: If you are continuing a chain and are about to be done, i.e. finished analysis, coming up with a plan/recommendation, send to the chat and do not self prompt.
+                         Always fetch state keys to inform state fetching. ALWAYS INCLUDE A TARGET EVEN FOR SELF PROMPTING. """
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
@@ -124,13 +124,13 @@ class TelegramAgent(LanguageAgent):
             # Strip the mention out so Claude just gets the raw command
             text = text.replace(f"@{bot_username}", "").strip()
 
-        response = self.llm.invoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + text).content
+        response = await self.llm.ainvoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + text)
+        response = response.content
         if response[0] == "`":
             response = response[7:-3]
         human_resp = json.loads(response)
         await update.message.reply_text(human_resp["telegram_reply"])
         net_commands = human_resp.get("network_payload", None)
-        print(net_commands)
         commands = net_commands
 
         if not isinstance(net_commands, List):
@@ -222,4 +222,3 @@ class TelegramAgent(LanguageAgent):
     def get_peer_schema(self, msg: dict) -> None:
         schemas = list(msg.keys())
         self.schemas[schemas[1]] = msg[schemas[1]]
-        print(self.schemas[schemas[1]])
