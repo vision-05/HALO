@@ -55,3 +55,10 @@ COPY generic/src/ ./generic/src/
 COPY discovery/src/ ./discovery/src/
 
 ENTRYPOINT ["python", "generic/src/streaming_agg.py"]
+
+FROM base AS weather
+
+COPY generic/src/ ./generic/src/
+COPY discovery/src/ ./discovery/src/
+
+ENTRYPOINT [ "python", "generic/src/weather.py" ]

@@ -15,6 +15,7 @@ import requests
 import re
 import os
 from loguru import logger
+import aiohttp
 CLAUDE_API_KEY = os.environ['CLAUDE_KEY']
 
 class LanguageAgent(BaseAgent):
@@ -99,7 +100,7 @@ class TelegramAgent(LanguageAgent):
                          Create a message chain with what you expect the actions to be, and inject the self prompt to occur after the relevant data is fetched. MAKE SURE TO INCLUDE WILDCARDS IN THE PROMPT.
                          Besides your own capabilities, every other agent on the network is "dumb" and should be assumed to only blindly retrieve data or complete an action. To suggest a "next_action", still use the key "on_success" as it will trigger automatically without specified failure.
                          CRITICAL: If you are continuing a chain and are about to be done, i.e. finished analysis, coming up with a plan/recommendation, send to the chat and do not self prompt.
-                         Always fetch state keys to inform state fetching. ALWAYS INCLUDE A TARGET EVEN FOR SELF PROMPTING. """
+                         Always fetch state keys to inform state fetching. ALWAYS INCLUDE A TARGET EVEN FOR SELF PROMPTING. Results from other agents are usually in json or similar. Make sure to pretty print where possible by self prompting on result, unless data is still being passed between agents. """
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
@@ -109,6 +110,42 @@ class TelegramAgent(LanguageAgent):
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         current_chat_id = update.effective_chat.id
         await update.message.reply_text(f"Help! The ID for this chat is: {current_chat_id}")
+
+    async def handle_location(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Catches Telegram location pins and reverse-geocodes them."""
+        lat = update.message.location.latitude
+        lon = update.message.location.longitude
+        
+        processing_msg = await update.message.reply_text("📍 Pinning your location...")
+        
+        # Free Reverse Geocoding via OpenStreetMap (No API Key Required!)
+        try:
+            headers = {"User-Agent": "HALO-SmartHome/1.0"}
+            url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    data = await response.json()
+                    address = data.get("address", {})
+                    
+                    # Extract the most useful local identifiers
+                    borough = address.get("borough") or address.get("city_district", "")
+                    city = address.get("city") or address.get("town") or address.get("village", "")
+                    neighborhood = address.get("neighbourhood") or address.get("suburb", "")
+                    
+                    # Format a beautiful string like "Camden Town, London"
+                    if neighborhood and city:
+                        self.state["weather_area"] = city[8:] if city.startswith("Greater") else city
+                        self.state["user_location"] = f"{neighborhood}, {city}"
+                    else:
+                        self.state["user_location"] = city or f"Lat: {lat}, Lon: {lon}"
+                        
+            await processing_msg.edit_text(f"✅ Location synced to: **{self.user_location}**.\n\nYou can now ask me to find food or weather nearby!")
+            
+        except Exception as e:
+            logger.error(f"Geocoding failed: {e}")
+            self.user_location = f"Lat: {lat}, Lon: {lon}"
+            await processing_msg.edit_text(f"✅ GPS Coordinates saved.")
 
     async def respond(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         is_group = update.message.chat.type in ['group', 'supergroup']
@@ -124,7 +161,7 @@ class TelegramAgent(LanguageAgent):
             # Strip the mention out so Claude just gets the raw command
             text = text.replace(f"@{bot_username}", "").strip()
 
-        response = await self.llm.ainvoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + text)
+        response = await self.llm.ainvoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Your state {self.state}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + text)
         response = response.content
         if response[0] == "`":
             response = response[7:-3]

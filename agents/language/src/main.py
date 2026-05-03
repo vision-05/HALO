@@ -31,6 +31,8 @@ async def start_mesh(application: Application) -> None:
     application.add_handler(CommandHandler("help", lang_agent.help_command))
     application.add_handler(CommandHandler("accept", lang_agent.accept_peer))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lang_agent.respond))
+    application.add_handler(MessageHandler(filters.LOCATION, lang_agent.handle_location))
+
     application.add_handler(CallbackQueryHandler(lang_agent.handle_button_press))
 
 def start_telegram_bot() -> None:

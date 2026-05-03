@@ -9,3 +9,4 @@ zmq
 zeroconf
 loguru
 apscheduler
+aiohttp

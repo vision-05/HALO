@@ -104,6 +104,21 @@ services:
       - AGENT_NAME=StreamingAggregator
       - AGENT_ROLE=Aggregator
     command: python -m watchfiles 'python /app/generic/src/streaming_agg.py' /app
+
+  weather:
+    build:
+      context: ./agents
+      dockerfile: generic/Dockerfile
+      target: weather
+    network_mode: host
+    volumes:
+      - ./agents/generic/src:/app/generic/src
+      - ./agents/discovery/src:/app/discovery/src
+    environment:
+      - PYTHONUNBUFFERED=1
+      - AGENT_NAME=WEatherAggregator
+      - AGENT_ROLE=Aggregator
+    command: python -m watchfiles 'python /app/generic/src/weather.py' /app
   
   generic-test:
     build:

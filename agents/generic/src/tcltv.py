@@ -57,12 +57,13 @@ class TclTv(BaseAgent):
         else:
             self.state["power"] = "off"
 
-    def sanititze(self, title):
-        if title[0] == '[':
-            return title[1:-1]
-        return title
-
-
+    def sanitize(self, title):
+        if not title:
+            return None
+        clean_title = str(title).strip("[]'\" ")
+        if clean_title.lower() == "none":
+            return None
+        return clean_title
 
     async def turn_onoff(self, msg: dict) -> None:
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "26"])
@@ -95,7 +96,7 @@ class TclTv(BaseAgent):
 
     async def play_spotify_track(self, msg: dict) -> None:
         track_id = msg["params"]["track_id"]
-        track_id = self.sanititze(track_id)
+        track_id = self.sanitize(track_id)
         res = subprocess.run(["adb", 
                         "shell", "am", "start", "-a", "android.intent.action.VIEW",
                         "-d", f"spotify:track:{track_id}",
@@ -123,14 +124,19 @@ class TclTv(BaseAgent):
         logger.debug(str(res))
 
     async def netflix_play_show(self, msg: dict) -> None:
-        show_id = msg["params"]["show_id"]
+        show_id = msg["params"].get("show_id")
         show_id = self.sanitize(show_id)
+        
+        # THE FIX: Guard against ghost-boots if Claude hallucinates a [None] ID
+        if not show_id:
+            logger.error(f"[{self.name}] Invalid or empty show_id received. Aborting.")
+            return
+
         logger.debug(f"[{self.name}] Initiating {show_id}")
 
-        # Define YOUR exact working ADB command from yesterday
         adb_start_cmd = [
             "adb", "-s", self.tv_ip, "shell", "am", "start", 
-            "-f", "0x10000020", # <--- THE MISSING LINK
+            "-f", "0x10000020", 
             "-n", "com.netflix.ninja/.MainActivity",
             "-a", "android.intent.action.VIEW", 
             "-e", "amzn_deeplink_data", str(show_id)
@@ -141,26 +147,22 @@ class TclTv(BaseAgent):
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "3"])
         await asyncio.sleep(2.0)
 
-        # 1. FIRST STRIKE: Send the intent to wake the app and hit the profile screen
-        logger.debug(f"[{self.name}] Waking up Netflix...")
+        # 1. CLEAN SLATE: Force stop Netflix gracefully instead of violently overriding it later
+        logger.debug(f"[{self.name}] Clearing previous Netflix instances...")
+        subprocess.run(["adb", "-s", self.tv_ip, "shell", "am", "force-stop", "com.netflix.ninja"])
+        await asyncio.sleep(1.0)
+
+        # 2. SINGLE STRIKE: Send the deep link intent ONCE
+        logger.debug(f"[{self.name}] Booting Netflix with deep link...")
         subprocess.run(adb_start_cmd, capture_output=True)
         
-        # Give it time to hit the profile selection screen
-        await asyncio.sleep(8.0)
-        
-        # 2. SELECT PROFILE: Press 'Enter'
-        logger.debug(f"[{self.name}] Selecting default profile...")
+        # 3. PROFILE BYPASS: Wait for the profile screen, then hit Enter.
+        # Netflix natively remembers the deep-link after the profile is clicked, so no second strike is needed!
+        await asyncio.sleep(10.0)
+        logger.debug(f"[{self.name}] Selecting default profile (if prompted)...")
         subprocess.run(["adb", "-s", self.tv_ip, "shell", "input", "keyevent", "66"])
         
-        # Give the profile time to fully load the home catalog
-        await asyncio.sleep(8.0)
-        
-        # 3. SECOND STRIKE: Send your exact deep-link AGAIN.
-        # Now that the profile is active, it will actually play the show.
-        logger.debug(f"[{self.name}] Sending deep-link to active profile...")
-        res = subprocess.run(adb_start_cmd, capture_output=True, text=True)
-        
-        logger.debug(f"[{self.name}] Final Result: {res}")
+        logger.debug(f"[{self.name}] Playback sequence complete.")
 
     async def play_luna_game(self, data: dict) -> None:
         """
@@ -170,7 +172,7 @@ class TclTv(BaseAgent):
         """
 
         game_id = data["params"]["game_id"]
-        game_id = self.sanititze(game_id)
+        game_id = self.sanitize(game_id)
     
         if not game_id:
             print(f"[{self.name}] Error: play_luna_game requires a game_id")

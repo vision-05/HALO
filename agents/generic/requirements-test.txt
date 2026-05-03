@@ -4,3 +4,4 @@ requests
 ddgs
 loguru
 apscheduler
+aiohttp

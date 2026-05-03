@@ -87,14 +87,16 @@ class BaseAgent:
             await asyncio.sleep(5.0)
 
     async def run(self) -> None:
-        asyncio.create_task(self.broadcast_and_discover())
-        asyncio.create_task(self.heartbeat())
-        asyncio.create_task(self.prune_network())
-        asyncio.create_task(self.expose_handlers())
-        asyncio.create_task(self.backup())
-
         self.scheduler.start()
-        await self.recv_msg()
+        tasks = [
+            self.broadcast_and_discover(),
+            self.heartbeat(),
+            self.prune_network(),
+            self.expose_handlers(),
+            self.backup(),
+            self.recv_msg()
+        ]
+        await asyncio.gather(*tasks)
 
     async def verification_prompt(self, peername: str, peerdata: Dict[str, Any]) -> None:
         clean_name = peername.split('.')[0]
@@ -214,25 +216,27 @@ class BaseAgent:
             return new_msg
         
     async def run_task(self, data, sender_id):
+        res = None
         if data.get("action",None) != "schema":
             logger.debug("Running task now")
         if hasattr(self, "handlers"):
             action = self.handlers.get(data["action"], None)
             if action is not None:
                 if inspect.iscoroutinefunction(action):
-                    await action(data)
+                    res = await action(data)
                 else:
                     res = action(data)
-                    next_act = data.get("on_success", None)
-                    failure_act = data.get("on_failure", None)
-                    if res is None and failure_act is not None:
-                        await self.send_msg(failure_act["target"], json.dumps(failure_act))
-                        return
-                    if next_act is not None:
-                        injected = self.inject_wildcards(res, next_act)
-                        logger.debug(injected)
-                        logger.debug("Sending new message")
-                        await self.send_msg(injected["target"], json.dumps(injected))
+
+                next_act = data.get("on_success", None)
+                failure_act = data.get("on_failure", None)
+                if res is None and failure_act is not None:
+                    await self.send_msg(failure_act["target"], json.dumps(failure_act))
+                    return
+                if next_act is not None:
+                    injected = self.inject_wildcards(res, next_act)
+                    logger.debug(injected)
+                    logger.debug("Sending new message")
+                    await self.send_msg(injected["target"], json.dumps(injected))
 
     async def handle_msg(self, message_data, sender_id):
         if message_data == b"heartbeat":
