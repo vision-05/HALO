@@ -1,14 +1,7 @@
 #!/usr/bin/env python3
 """Interactive CLI human bridge for ``cli_bridge`` (stdin → ``threading.Queue`` → SimPy ``BridgeInjector``).
+PYTHONPATH=. python -m halo_simulation.cli_human --days 2 --seed 42 --demo-wall-seconds 60
 
-Usage (from repo root)::
-
-    PYTHONPATH=. python -m halo_simulation.cli_human --days 2 --seed 42 --demo-wall-seconds 60
-
-The command reader starts **before** the simulation clock. Use ``--warmup`` (default: a few
-real seconds) to type lines such as ``set-pref 22`` and ``status`` **while time is frozen**; they
-are queued and applied when the sim starts. Do **not** use ``input()`` for "start" — that would
-eat your first command line. After warmup, simulated days still run quickly in wall-clock time.
 
 **Dashboard / SSE:** start the FastAPI server, pick scenario ``cli_bridge``, then POST JSON commands
 to ``/api/inject`` (same keys as the queue: ``op`` + fields). Example::
