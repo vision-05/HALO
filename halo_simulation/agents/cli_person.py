@@ -18,8 +18,14 @@ logger = logging.getLogger(__name__)
 
 class CliPersonAgent(PersonAgent):
     """
-    Like ``PersonAgent`` but does **not** auto-reply to ``NegotiationProposal`` when
-    ``manual_negotiation`` is True (use bridge ``send-counter`` / ``send-accept`` / ``send-reject``).
+    Like ``PersonAgent`` but:
+
+    - **manual_negotiation** (default True): does not auto-reply to ``NegotiationProposal`` —
+      use inject ``send_counter`` / ``send_accept`` / ``send_reject``.
+    - **manual_schedule** (default True): no simulated wake / leave / return / sleep — presence
+      and preference broadcasts come only from inject (``set_pref``, ``leave``, ``return``).
+      Schedule dict is retained only for learning helpers that read ``sleep`` / leave-return hints.
+      Set ``manual_schedule=False`` to restore scripted day-cycle behaviour (e.g. automated demos).
     """
 
     def __init__(
@@ -32,6 +38,7 @@ class CliPersonAgent(PersonAgent):
         metrics: MetricsCollector | None,
         schedule: dict[str, int],
         manual_negotiation: bool = True,
+        manual_schedule: bool = True,
         preferred_temperature: float = 21.0,
         scenario_name: str = "cli_bridge",
         **kwargs: Any,
@@ -49,7 +56,34 @@ class CliPersonAgent(PersonAgent):
             **kwargs,
         )
         self.manual_negotiation = manual_negotiation
+        self._manual_schedule = manual_schedule
         self._pending_negotiation: dict[str, Any] | None = None
+
+    def run(self):
+        if self._manual_schedule:
+            yield from self._manual_presence_loop()
+        else:
+            yield from super().run()
+
+    def _manual_presence_loop(self):
+        """Inbox-only loop; fires end-of-day learning when simulation date advances."""
+        prev_day = int(self.env.now // config.MINUTES_PER_DAY)
+        while True:
+            cur_day = int(self.env.now // config.MINUTES_PER_DAY)
+            while prev_day < cur_day:
+                self._end_of_day_learning(float(prev_day * config.MINUTES_PER_DAY))
+                prev_day += 1
+
+            deadline = self.env.now + 1.0
+            while self.env.now < deadline:
+                remaining = max(0.0, deadline - self.env.now)
+                res, get_ev = yield from self.wait_inbox_or_timeout(remaining)
+                if get_ev in res:
+                    self._handle_message(res[get_ev])
+                    yield from self.drain_inbox_burst(self._handle_message)
+                else:
+                    yield from self.drain_inbox_burst(self._handle_message)
+                    break
 
     @property
     def pending_negotiation(self) -> dict[str, Any] | None:

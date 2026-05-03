@@ -87,6 +87,11 @@ CARBON_SPIKE_INTENSITY = 280  # gCO2/kWh (high band)
 # Dishwasher: prefer scheduling after this minute on high-carbon days
 DISHWASHER_LOW_CARBON_AFTER_MINUTE = 22 * 60
 
+# Hot water tank (shower scenarios): normalized 0–1 fraction in agent state UI
+HOT_WATER_DRAIN_PER_SHOWER = 0.35
+HOT_WATER_RECHARGE_PER_MINUTE_BASE = 0.009
+HOT_WATER_RECHARGE_GRID_CLEAN_MULTIPLIER = 2.0
+
 # Negotiation device longevity pull (small bias toward device optimal operating point)
 DEVICE_LONGEVITY_PULL = 0.05
 

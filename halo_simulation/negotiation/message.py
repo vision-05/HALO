@@ -32,6 +32,7 @@ class MessageTypes:
     DeviceFailureNotice = "DeviceFailureNotice"
     DeviceRecoveryNotice = "DeviceRecoveryNotice"
     ActuationCommand = "ActuationCommand"
+    DeviceTelemetry = "DeviceTelemetry"
 
 
 @dataclass
@@ -108,6 +109,10 @@ class MessageBus:
         self._log_route(message)
 
     def broadcast(self, message: Message) -> None:
+        # Instrumentation-only: avoids delivering to every inbox (streaming layer still sees it).
+        if message.msg_type == MessageTypes.DeviceTelemetry:
+            self._log_route(message)
+            return
         for aid, agent in self._registry.items():
             if aid == message.sender_id:
                 continue

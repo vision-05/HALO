@@ -27,21 +27,25 @@ Open `http://127.0.0.1:8000` in a browser. Use **single worker** (default `uvico
 | `carbon_spike` | Includes dishwasher timing vs carbon |
 | `device_failure` | Adds device failure / recovery paths |
 | **`cli_bridge`** | **CLI Human Bridge** — Bob is scripted; **`person_cli`** is controlled by you (UI or CLI) |
+| **`fused`** | Combined demo: Alice + Bob + **`person_cli`** (human), thermostat (rare failures), dishwasher + shower, specialists, **guaranteed evening carbon spike** (use **Human inject** like `cli_bridge`) |
 
-### Human-in-the-loop (`cli_bridge`)
+### Human-in-the-loop (`cli_bridge` **or** `fused`)
 
-1. Choose **CLI Human Bridge**, set **Days** (short runs are easier to follow), optional **Pace (s)** to stretch the full run over that many wall-clock seconds (good for demos).
-2. Click **Run** so `GET /stream?scenario=cli_bridge&...` is active.
+1. Choose **CLI Human Bridge** or **Fused (full demo)** in the UI, set **Days** (short runs are easier to follow), optional **Pace (s)** to stretch the full run over that many wall-clock seconds (good for demos).
+2. Click **Run** so `GET /stream?scenario=cli_bridge&...` or `...&scenario=fused&...` is active.
 3. Use the **Human inject** strip (same contract as `POST /api/inject`).
 
-**Inject contract:** JSON body with an `op` field; see the module docstring in `halo_simulation/human_bridge.py` for allowed operations (`set_pref`, `leave`, `return`, `send_counter`, `send_accept`, `send_reject`) and fields. The server validates with `validate_queue_item()`.
+**Inject contract:** JSON body with an `op` field; see `halo_simulation/human_bridge.py` for allowed operations (`set_pref`, `leave`, `return`, `send_counter`, `send_accept`, `send_reject`) and fields. The server validates with `validate_queue_item()`.
+
+**`person_cli` schedule:** by default **`CliPersonAgent` does not run simulated wake/sleep commute** (`manual_schedule=True`). Your presence and comfort broadcasts happen when **you** inject `set_pref` / `leave` / `return` (and negotiation replies when proposals arrive). For scripted clock-driven CLI behaviour pass `manual_schedule=False` where the agent is constructed.
 
 **Stream query parameters (among others):** `scenario`, `days`, `seed`, `live_data`, `demo_wall_seconds` — when `demo_wall_seconds` is greater than zero, the simulation worker sleeps between chunks so the full run lasts about that many real-time seconds.
 
 ### CLI human bridge (no browser)
 
 ```bash
-PYTHONPATH=. python -m halo_simulation.cli_human --days 2 --seed 42 --demo-wall-seconds 60
+PYTHONPATH=. python -m halo_simulation.cli_human --scenario cli_bridge --days 2 --seed 42 --demo-wall-seconds 60
+PYTHONPATH=. python -m halo_simulation.cli_human --scenario fused --days 2 --demo-wall-seconds 60
 ```
 
 Stdin commands are documented in `halo_simulation/cli_human.py` (e.g. `set-pref`, `leave`, `return`, `send-counter`, `send-accept`, `status`, `quit`).
@@ -60,6 +64,7 @@ PYTHONPATH=. pytest halo_simulation/tests/
 | `halo_simulation/ui/index.html` | Live dashboard |
 | `halo_simulation/human_bridge.py` | Queue contract, `BridgeInjector` (SimPy-side queue drain → bus) |
 | `halo_simulation/scenarios/cli_bridge.py` | `cli_bridge` scenario wiring |
+| `halo_simulation/scenarios/fused.py` | `fused` combined scenario |
 | `halo_simulation/agents/cli_person.py` | `person_cli` agent (manual negotiation path) |
 | `halo_simulation/cli_human.py` | Interactive stdin → queue → same scenario as UI |
 | `halo_simulation/config.py` | Tunables (time, negotiation, pacing cap, etc.) |

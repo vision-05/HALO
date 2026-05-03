@@ -50,9 +50,11 @@ from halo_simulation.scenarios.base_scenario import BaseScenario
 from halo_simulation.scenarios.carbon_spike import CarbonSpikeScenario
 from halo_simulation.scenarios.device_failure import DeviceFailureScenario
 from halo_simulation.scenarios.cli_bridge import CliBridgeScenario
+from halo_simulation.scenarios.fused import FusedScenario
 from halo_simulation.scenarios.temperature_conflict import TemperatureConflictScenario
 
 _UI_DIR = Path(__file__).resolve().parent / "ui"
+_NO_SHOWER_UID_IN_TELEMETRY = object()
 
 
 def _describe_message(msg: Message) -> str:
@@ -79,6 +81,16 @@ def _describe_message(msg: Message) -> str:
         return f"Failure: {pl.get('device_type', '?')}"
     if mt == MessageTypes.DeviceRecoveryNotice:
         return "Recovered"
+    if mt == MessageTypes.DeviceTelemetry:
+        frac = pl.get("hot_water_fraction")
+        try:
+            pct = int(round(100.0 * float(frac))) if frac is not None else None
+        except (TypeError, ValueError):
+            pct = None
+        suf = (pl.get("feed_suffix") or "").strip()
+        if pct is None:
+            return "Tank update" + (f" — {suf}" if suf else "")
+        return ("Hot water " + str(pct) + "%") + (" — " + suf if suf else "")
     if mt in (MessageTypes.DepartureNotice, MessageTypes.ArrivalNotice, MessageTypes.SleepNotice):
         return mt.replace("Notice", "").lower()
     return mt
@@ -163,6 +175,15 @@ def agent_states_from_message(msg: Message) -> list[dict[str, Any]]:
             {
                 "agent_id": pid,
                 "agent_type": "person",
+                "state_key": "activity",
+                "state_value": "awake",
+                "timestamp": ts,
+            }
+        )
+        out.append(
+            {
+                "agent_id": pid,
+                "agent_type": "person",
                 "state_key": "preferred_temperature",
                 "state_value": float(temp) if temp != "" else None,
                 "timestamp": ts,
@@ -178,6 +199,15 @@ def agent_states_from_message(msg: Message) -> list[dict[str, Any]]:
                 "timestamp": ts,
             }
         )
+        out.append(
+            {
+                "agent_id": msg.sender_id,
+                "agent_type": "person",
+                "state_key": "activity",
+                "state_value": "awake",
+                "timestamp": ts,
+            }
+        )
     elif mt == MessageTypes.ArrivalNotice:
         out.append(
             {
@@ -185,6 +215,25 @@ def agent_states_from_message(msg: Message) -> list[dict[str, Any]]:
                 "agent_type": "person",
                 "state_key": "presence",
                 "state_value": "home",
+                "timestamp": ts,
+            }
+        )
+        out.append(
+            {
+                "agent_id": msg.sender_id,
+                "agent_type": "person",
+                "state_key": "activity",
+                "state_value": "awake",
+                "timestamp": ts,
+            }
+        )
+    elif mt == MessageTypes.SleepNotice:
+        out.append(
+            {
+                "agent_id": msg.sender_id,
+                "agent_type": "person",
+                "state_key": "activity",
+                "state_value": "sleeping",
                 "timestamp": ts,
             }
         )
@@ -285,6 +334,45 @@ def agent_states_from_message(msg: Message) -> list[dict[str, Any]]:
                 "data_source": pl.get("source", "synthetic"),
             }
         )
+    elif mt == MessageTypes.DeviceTelemetry:
+        did = pl.get("device_id", msg.sender_id)
+        frac = pl.get("hot_water_fraction")
+        try:
+            fv = float(frac) if frac is not None else None
+        except (TypeError, ValueError):
+            fv = None
+        if fv is not None:
+            out.append(
+                {
+                    "agent_id": did,
+                    "agent_type": "device",
+                    "state_key": "hot_water_fraction",
+                    "state_value": fv,
+                    "timestamp": ts,
+                }
+            )
+        act = pl.get("device_activity")
+        if isinstance(act, str):
+            out.append(
+                {
+                    "agent_id": did,
+                    "agent_type": "device",
+                    "state_key": "device_state",
+                    "state_value": act,
+                    "timestamp": ts,
+                }
+            )
+        uid_marker = pl.get("shower_user_id", _NO_SHOWER_UID_IN_TELEMETRY)
+        if uid_marker is not _NO_SHOWER_UID_IN_TELEMETRY:
+            out.append(
+                {
+                    "agent_id": did,
+                    "agent_type": "device",
+                    "state_key": "shower_user",
+                    "state_value": uid_marker if isinstance(uid_marker, str) else None,
+                    "timestamp": ts,
+                }
+            )
 
     return out
 
@@ -326,6 +414,14 @@ class StreamingMessageBus(MessageBus):
         self._after_route(message)
 
     def _after_route(self, message: Message) -> None:
+        if message.msg_type == MessageTypes.DeviceTelemetry:
+            for st in agent_states_from_message(message):
+                self._emit("agent_state", st)
+            pl = message.payload or {}
+            if pl.get("notify_feed"):
+                self._emit("message", message_to_public_dict(message))
+            return
+
         self._emit("message", message_to_public_dict(message))
         for st in agent_states_from_message(message):
             self._emit("agent_state", st)
@@ -449,6 +545,25 @@ class StreamingCliBridgeScenario(CliBridgeScenario):
         self.bus = StreamingMessageBus(self.env, metrics=metrics, emit=emit)
 
 
+class StreamingFusedScenario(FusedScenario):
+    """``fused`` with SSE-friendly metrics + ``StreamingMessageBus`` (same ``build()`` as base)."""
+
+    def __init__(
+        self,
+        seed: int,
+        days: int,
+        emit: Callable[[str, dict[str, Any]], None],
+        inject_queue: queue.Queue,
+        api_client: Any | None = None,
+    ) -> None:
+        metrics = StreamingMetricsCollector("fused", emit)
+        BaseScenario.__init__(self, seed, days, metrics)
+        self._inject_queue = inject_queue
+        self._api_client = api_client
+        self._status_reply = queue.Queue(maxsize=4)
+        self.bus = StreamingMessageBus(self.env, metrics=metrics, emit=emit)
+
+
 def create_scenario(
     name: str,
     seed: int,
@@ -467,6 +582,10 @@ def create_scenario(
         if inject_queue is None:
             raise ValueError("cli_bridge requires inject_queue")
         return StreamingCliBridgeScenario(seed, days, emit, inject_queue, api_client=api_client)
+    if name == "fused":
+        if inject_queue is None:
+            raise ValueError("fused requires inject_queue")
+        return StreamingFusedScenario(seed, days, emit, inject_queue, api_client=api_client)
     raise ValueError(f"Unknown scenario: {name}")
 
 
@@ -564,7 +683,7 @@ async def index() -> FileResponse:
 async def stream(
     scenario: str = Query(
         ...,
-        description="temperature_conflict | carbon_spike | device_failure | cli_bridge",
+        description="temperature_conflict | carbon_spike | device_failure | cli_bridge | fused",
     ),
     days: int = Query(14, ge=1, le=365),
     seed: int = Query(42),
@@ -577,7 +696,7 @@ async def stream(
         "Use ~60 for CLI human-in-the-loop demos.",
     ),
 ) -> EventSourceResponse:
-    if scenario not in ("temperature_conflict", "carbon_spike", "device_failure", "cli_bridge"):
+    if scenario not in ("temperature_conflict", "carbon_spike", "device_failure", "cli_bridge", "fused"):
         raise HTTPException(status_code=400, detail="Invalid scenario")
 
     loop = asyncio.get_running_loop()
@@ -587,7 +706,7 @@ async def stream(
 
     inject_queue: queue.Queue | None = None
     app.state.inject_queue = None
-    if scenario == "cli_bridge":
+    if scenario in ("cli_bridge", "fused"):
         inject_queue = queue.Queue()
         app.state.inject_queue = inject_queue
 
@@ -651,7 +770,7 @@ async def stream(
 
 @app.post("/api/inject")
 async def inject_message(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    """Enqueue a human-bridge command for an active ``cli_bridge`` stream (same schema as ``human_bridge`` queue)."""
+    """Enqueue a human-bridge command for an active ``cli_bridge`` / ``fused`` stream."""
     from halo_simulation.human_bridge import validate_queue_item
 
     item = validate_queue_item(body)
@@ -661,7 +780,8 @@ async def inject_message(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     if q is None:
         raise HTTPException(
             status_code=503,
-            detail="No active cli_bridge stream (start GET /stream?scenario=cli_bridge first)",
+            detail="No active human-in-loop stream — start GET /stream?scenario=cli_bridge "
+            "or scenario=fused first",
         )
     try:
         q.put_nowait(item)

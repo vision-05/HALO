@@ -17,6 +17,8 @@ from halo_simulation.negotiation.message import Message, MessageTypes
 
 logger = logging.getLogger(__name__)
 
+_SHOWER_USER_OMIT = object()
+
 
 class DeviceAgent(BaseAgent):
     """Base device with failure/recovery and optional state machine hooks."""
@@ -536,6 +538,8 @@ class DishwasherDeviceAgent(DeviceAgent):
 
 
 class ShowerDeviceAgent(DeviceAgent):
+    """Shared tank: fixed drain per use, passive recharge; faster refill when grid carbon is below threshold."""
+
     def __init__(
         self,
         agent_id: str,
@@ -548,17 +552,83 @@ class ShowerDeviceAgent(DeviceAgent):
         super().__init__(agent_id, "shower", env, message_bus, rng, metrics, scenario_name=scenario_name)
         self._state["device_state"] = "idle"
         self._state["hot_water_available"] = 1.0
+        self._last_carbon = float(config.CARBON_HOURLY_BASELINE[12])
+
+    def _publish_hw(
+        self,
+        *,
+        notify_feed: bool = False,
+        feed_suffix: str = "",
+        device_activity: str | None = None,
+        shower_user_id: Any = _SHOWER_USER_OMIT,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "device_id": self.agent_id,
+            "hot_water_fraction": float(self._state.get("hot_water_available", 0.0)),
+            "notify_feed": notify_feed,
+        }
+        if shower_user_id is not _SHOWER_USER_OMIT:
+            payload["shower_user_id"] = shower_user_id
+        suf = feed_suffix.strip()
+        if suf:
+            payload["feed_suffix"] = suf
+        if device_activity is not None:
+            payload["device_activity"] = device_activity
+        self.broadcast(
+            Message.create(
+                self.agent_id,
+                "broadcast",
+                MessageTypes.DeviceTelemetry,
+                payload,
+                self.env.now,
+            )
+        )
 
     def _handle_message(self, msg: Message) -> None:
+        if msg.msg_type == MessageTypes.CarbonIntensityUpdate:
+            self._last_carbon = float(msg.payload.get("current", self._last_carbon))
+            return
         if msg.msg_type == MessageTypes.ArrivalNotice:
-            self.env.process(self._use_shower())
+            self.env.process(self._use_shower(msg.sender_id))
 
-    def _use_shower(self):
+    def _recharge_step(self, dt_minutes: float) -> None:
+        ds = self._state.get("device_state")
+        if ds in ("failed", "maintenance_required"):
+            return
+        grid_clean = self._last_carbon < float(config.CARBON_HIGH_THRESHOLD)
+        mult = config.HOT_WATER_RECHARGE_GRID_CLEAN_MULTIPLIER if grid_clean else 1.0
+        rate = float(config.HOT_WATER_RECHARGE_PER_MINUTE_BASE) * mult
+        before = float(self._state.get("hot_water_available", 1.0))
+        after = min(1.0, before + rate * dt_minutes)
+        if abs(after - before) < 1e-12:
+            return
+        self._state["hot_water_available"] = after
+        self._publish_hw()
+
+    def _use_shower(self, person_id: str):
         if self._state.get("device_state") != "idle":
             return
+        cost = float(config.HOT_WATER_DRAIN_PER_SHOWER)
+        level = float(self._state.get("hot_water_available", 1.0))
+        if level + 1e-12 < cost:
+            self._publish_hw(
+                notify_feed=True,
+                feed_suffix=f"skip — depleted ({person_id})",
+            )
+            return
         self._state["device_state"] = "running"
+        self._publish_hw(device_activity="running", shower_user_id=person_id)
         yield self.env.timeout(15.0)
+        level = float(self._state.get("hot_water_available", 1.0))
+        self._state["hot_water_available"] = max(0.0, level - cost)
         self._state["device_state"] = "idle"
+        pct = int(round(100.0 * float(self._state["hot_water_available"])))
+        self._publish_hw(
+            device_activity="idle",
+            notify_feed=True,
+            feed_suffix=f"done · {person_id} · tank {pct}%",
+            shower_user_id=None,
+        )
 
     def run(self):
         while True:
@@ -572,6 +642,7 @@ class ShowerDeviceAgent(DeviceAgent):
                 else:
                     yield from self.drain_inbox_burst(self._handle_message)
                     break
+            self._recharge_step(1.0)
             self._maybe_sample_failure()
 
 

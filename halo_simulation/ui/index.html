@@ -19,6 +19,16 @@
       --green: #3fb950;
       --amber: #d29922;
       --red: #f85149;
+      --room-fill: #262d38;
+      --room-fill-porch: #1a2028;
+      --room-stroke: #3d4450;
+      --room-label: #aeb7c2;
+      --chart-grid: rgba(72, 79, 88, 0.28);
+      --chart-tick: #c9d1d9;
+      --chart-setpoint: #8b949e;
+      --person-alice-chart: #f78166;
+      --person-bob-chart: #79c0ff;
+      --person-cli-chart: #58a6ff;
     }
     * { box-sizing: border-box; }
     body {
@@ -77,22 +87,61 @@
       100% { box-shadow: 0 0 0 12px rgba(88, 166, 255, 0); }
     }
     .card-detail { font-size: 0.75rem; color: var(--muted); line-height: 1.35; margin-top: 0.35rem; }
-    #floorWrap { flex: 1; min-height: 200px; padding: 0.5rem; background: #0d1117; }
-    #floorWrap svg { width: 100%; height: 100%; max-height: 42vh; }
-    .room { fill: #21262d; stroke: #30363d; stroke-width: 2; }
-    .room-label { fill: var(--muted); font-size: 11px; }
-    .thermo-circle { stroke: #fff; stroke-width: 2; }
-    .dw-rect { rx: 4; }
-    .light-dot { stroke: #30363d; stroke-width: 1; }
+    #floorWrap {
+      flex: 1 1 0;
+      min-height: 180px;
+      padding: 0.5rem 0.45rem;
+      margin: 0 0.2rem;
+      background: radial-gradient(ellipse 120% 80% at 50% 30%, #151b22 0%, #0d1117 55%);
+      border-radius: 12px;
+      border: 1px solid #30363d;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+    #floorWrap svg { width: 100%; height: 100%; max-height: 56vh; vertical-align: top; filter: drop-shadow(0 1px 14px rgba(0, 0, 0, 0.2)); }
+    .room {
+      fill: var(--room-fill);
+      stroke: var(--room-stroke);
+      stroke-width: 1.15;
+    }
+    .room-porch-floor { fill: var(--room-fill-porch); stroke: #484f58; stroke-width: 1; }
+    .room-label {
+      fill: var(--room-label);
+      font-size: 10.5px;
+      font-weight: 550;
+      letter-spacing: 0.02em;
+    }
+    .room-icon { font-size: 9px; opacity: 0.85; }
+    .thermo-circle { stroke: #fff; stroke-width: 2; stroke-linejoin: round; filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.35)); }
+    .thermo-ring { fill: none; stroke: #30363d; stroke-width: 2.25; opacity: 0.9; }
+    .dw-rect {
+      rx: 4;
+      transition: fill 0.25s ease, filter 0.25s ease;
+    }
+    .dw-rect.dw-active { filter: drop-shadow(0 0 8px rgba(56, 139, 253, 0.55)); }
+    .dw-rect.dw-scheduled { filter: drop-shadow(0 0 6px rgba(210, 153, 34, 0.45)); }
+    .light-dot { stroke: #21262d; stroke-width: 1; transition: fill 0.3s ease; }
+    #showerIcon { transition: opacity 0.35s ease, filter 0.35s ease; }
+    #showerIcon.shower-pulse { filter: drop-shadow(0 0 7px rgba(88, 166, 255, 0.5)); }
     .person-dot { stroke: #fff; stroke-width: 2; }
     /* Smooth floor-plan movement (Bob / CLI or Alice); avoid rebuilding SVG every tick. */
     #floorWrap svg .person-figure {
-      transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s ease;
+      transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.35, 1), opacity 0.38s ease;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
     }
-    .negot-line { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; fill: none; animation: dash 0.8s linear infinite; }
+    .negot-line {
+      stroke: var(--accent);
+      stroke-width: 1.75;
+      stroke-dasharray: 10 14;
+      stroke-linecap: round;
+      opacity: 0.75;
+      fill: none;
+      animation: dash 1.15s linear infinite;
+    }
     @keyframes dash { to { stroke-dashoffset: -20; } }
     #feed {
-      flex: 0 0 38%; min-height: 120px; border-top: 1px solid #30363d; overflow-y: auto; padding: 0.35rem;
+      flex: 0 0 30%; min-height: 100px; max-height: 34vh; border-top: 1px solid #30363d; overflow-y: auto; padding: 0.35rem;
       background: #0d1117; font-size: 0.72rem;
     }
     .feed-row {
@@ -106,8 +155,63 @@
     .metric-card { background: var(--panel); border-radius: 6px; padding: 0.45rem; text-align: center; border: 1px solid #30363d; }
     .metric-card .v { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
     .metric-card .l { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; }
-    .chart-box { background: var(--panel); border-radius: 8px; padding: 0.5rem; margin-bottom: 0.5rem; border: 1px solid #30363d; height: 220px; position: relative; }
-    .chart-box.tall { height: 180px; }
+    .chart-box {
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 0.45rem;
+      margin-bottom: 0.5rem;
+      border: 1px solid #30363d;
+      height: 220px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+    .chart-box::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 3px;
+      opacity: 0.95;
+      pointer-events: none;
+      border-radius: 8px 8px 0 0;
+    }
+    .chart-box.chart-thermostat::before {
+      background: linear-gradient(90deg, var(--chart-setpoint) 0%, var(--accent) 100%);
+    }
+    .chart-box.chart-shower::before {
+      background: linear-gradient(90deg, #388bfd44, var(--accent));
+    }
+    .chart-box.chart-weather::before {
+      background: linear-gradient(90deg, #5697c744, var(--blue));
+    }
+    .chart-canvas-fill { width: 100%; height: 100%; display: block; }
+    .chart-empty-msg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 1rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.45;
+      pointer-events: none;
+      z-index: 1;
+      background: radial-gradient(circle at 50% 50%, rgba(13,17,23,0.25) 0%, transparent 70%);
+      transition: opacity 0.3s ease;
+    }
+    .chart-empty-msg[hidden], .chart-empty-msg.hidden {
+      opacity: 0;
+      visibility: hidden;
+    }
+    .chart-box.shower-strip {
+      height: 160px;
+      display: none;
+    }
+    .chart-box.shower-strip.visible { display: flex; flex-direction: column; }
     .chart-box.weather {
       height: 300px;
       display: flex;
@@ -119,6 +223,42 @@
       flex-wrap: wrap; gap: 0.35rem;
       flex-shrink: 0;
     }
+    .weather-title-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      min-width: 0;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .weather-mode-pill {
+      font-size: 0.58rem;
+      font-weight: 700;
+      padding: 0.12rem 0.42rem;
+      border-radius: 999px;
+      letter-spacing: 0.06em;
+      flex-shrink: 0;
+      border: 1px solid #30363d;
+      color: var(--muted);
+      background: #21262d;
+    }
+    .weather-mode-pill.forecast { color: #9ca3af; border-color: #3d4450; }
+    .weather-mode-pill.sim-model { color: #d2a8ff; border-color: #a371f744; background: #a371f716; }
+    .weather-mode-pill.sim-grow { color: var(--accent); border-color: #388bfd44; background: #388bfd12; }
+    .chart-box.chart-thermostat,
+    .chart-box.chart-shower { display: flex; flex-direction: column; min-height: 0; }
+    .chart-box.chart-weather { display: flex; flex-direction: column; min-height: 0; }
+    .chart-box > canvas {
+      flex: 1 1 auto;
+      min-height: 0;
+      position: relative;
+      z-index: 2;
+    }
+    body.compact-layout .chart-box:not(.weather):not(#chartShowerWrap) { height: 168px; }
+    body.compact-layout #chartShowerWrap.chart-box.shower-strip.visible { height: 132px !important; }
+    body.compact-layout .chart-box.weather { height: 240px !important; min-height: 240px !important; }
+    body.compact-layout #floorWrap svg { max-height: 52vh !important; }
     .chart-box.weather .weather-chart-wrap {
       flex: 1;
       min-height: 200px;
@@ -150,11 +290,11 @@
     #humanInjectStrip {
       display: none;
       flex-direction: column;
-      gap: 0.65rem;
-      padding: 0.65rem 1rem 0.75rem;
+      gap: 0.35rem;
+      padding: 0.35rem 0.65rem 0.4rem;
       background: linear-gradient(180deg, #1a222d 0%, #161b22 100%);
       border-bottom: 1px solid #30363d;
-      font-size: 0.8rem;
+      font-size: 0.72rem;
       flex-shrink: 0;
       position: relative;
       z-index: 6;
@@ -164,75 +304,74 @@
     .hi-head {
       display: flex;
       flex-wrap: wrap;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
-      gap: 0.5rem 1rem;
+      gap: 0.35rem 0.6rem;
     }
-    .hi-head-main { min-width: 0; flex: 1 1 12rem; }
+    .hi-head-main { min-width: 0; flex: 1 1 10rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.65rem; }
     .hi-title {
-      display: block;
+      display: inline;
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 0.82rem;
       color: var(--accent);
       letter-spacing: 0.02em;
     }
     .hi-sub {
-      display: block;
-      margin-top: 0.2rem;
-      font-size: 0.72rem;
+      display: inline;
+      font-size: 0.66rem;
       color: var(--muted);
-      line-height: 1.4;
+      line-height: 1.3;
     }
     .hi-sub code {
-      font-size: 0.68rem;
-      padding: 0.08rem 0.28rem;
-      border-radius: 4px;
+      font-size: 0.62rem;
+      padding: 0.04rem 0.22rem;
+      border-radius: 3px;
       background: #21262d;
       border: 1px solid #30363d;
     }
     .hi-panels {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 0.65rem;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+      gap: 0.35rem;
       width: 100%;
     }
     .hi-card {
       background: var(--panel);
       border: 1px solid #30363d;
-      border-radius: 10px;
-      padding: 0.55rem 0.65rem 0.65rem;
+      border-radius: 6px;
+      padding: 0.32rem 0.45rem 0.4rem;
       box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
     }
     .hi-card-title {
-      font-size: 0.65rem;
+      font-size: 0.58rem;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.07em;
+      letter-spacing: 0.06em;
       color: var(--muted);
-      margin-bottom: 0.45rem;
-      padding-bottom: 0.35rem;
+      margin-bottom: 0.28rem;
+      padding-bottom: 0.22rem;
       border-bottom: 1px solid #30363d;
     }
     .hi-card-body {
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 0.3rem;
     }
     .hi-field-row {
       display: flex;
       flex-wrap: wrap;
       align-items: flex-end;
-      gap: 0.45rem 0.6rem;
+      gap: 0.28rem 0.45rem;
     }
     .hi-field {
       display: flex;
       flex-direction: column;
-      gap: 0.2rem;
+      gap: 0.12rem;
       min-width: 0;
     }
     .hi-field label,
     .hi-field-inline {
-      font-size: 0.68rem;
+      font-size: 0.61rem;
       font-weight: 500;
       color: var(--muted);
     }
@@ -241,10 +380,10 @@
       background: #0d1117;
       border: 1px solid #30363d;
       color: var(--text);
-      border-radius: 6px;
-      padding: 0.32rem 0.45rem;
-      font-size: 0.8rem;
-      min-height: 2rem;
+      border-radius: 4px;
+      padding: 0.2rem 0.35rem;
+      font-size: 0.72rem;
+      min-height: 1.62rem;
     }
     #humanInjectStrip input[type="number"]:focus,
     #humanInjectStrip input[type="text"]:focus {
@@ -254,25 +393,32 @@
     }
     #injectPref,
     #injectCounterVal {
-      width: 4.5rem;
+      width: 3.75rem;
       font-variant-numeric: tabular-nums;
     }
     #injectNid {
-      width: min(100%, 18rem);
-      min-width: 10rem;
+      width: min(100%, 14rem);
+      min-width: 6rem;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.74rem;
+      font-size: 0.65rem;
     }
     .hi-btn-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.4rem;
+      gap: 0.28rem;
     }
+    .hi-nid-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 0.28rem;
+    }
+    .hi-nid-row .hi-field { flex: 1 1 8rem; }
     #humanInjectStrip .hi-btn {
-      font-size: 0.74rem;
+      font-size: 0.65rem;
       font-weight: 600;
-      padding: 0.38rem 0.75rem;
-      border-radius: 6px;
+      padding: 0.22rem 0.5rem;
+      border-radius: 4px;
       cursor: pointer;
       border: 1px solid transparent;
       transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
@@ -307,8 +453,8 @@
     }
     #humanInjectStrip details.hi-help {
       width: 100%;
-      margin-top: 0.15rem;
-      font-size: 0.72rem;
+      margin-top: 0;
+      font-size: 0.65rem;
       color: var(--muted);
     }
     #humanInjectStrip details.hi-help summary {
@@ -316,23 +462,24 @@
       color: var(--blue);
       user-select: none;
       font-weight: 500;
+      font-size: 0.66rem;
     }
     #humanInjectStrip details.hi-help ol {
-      margin: 0.35rem 0 0 1.1rem;
+      margin: 0.28rem 0 0 1rem;
       padding: 0;
-      line-height: 1.45;
+      line-height: 1.35;
     }
     #injectFeedback {
-      flex: 1 1 14rem;
+      flex: 0 1 16rem;
       max-width: 100%;
-      min-height: 1.35rem;
-      padding: 0.35rem 0.5rem;
-      border-radius: 6px;
+      min-height: 1.28rem;
+      padding: 0.22rem 0.42rem;
+      border-radius: 4px;
       background: #0d1117;
       border: 1px solid #30363d;
-      font-size: 0.72rem;
+      font-size: 0.64rem;
       color: var(--muted);
-      line-height: 1.35;
+      line-height: 1.25;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -359,6 +506,7 @@
         <option value="carbon_spike">Carbon Spike</option>
         <option value="device_failure">Device Failure</option>
         <option value="cli_bridge">CLI Human Bridge (Bob + person_cli)</option>
+        <option value="fused">Fused (Alice + Bob + person_cli · full demo)</option>
       </select>
     </label>
     <label>Days <input type="number" id="days" value="2" min="1" max="365" style="width:4rem" /></label>
@@ -381,12 +529,16 @@
     <span id="simTime">Sim: —:—</span>
     <span id="runStatus" title=""></span>
     <span id="speedNote">Pace &gt;0 slows the worker thread between chunks (good for demos). Set 0 for max speed.</span>
+    <label title="Shorter charts, more room for floor + feed" style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.75rem;color:var(--muted);cursor:pointer;">
+      <input type="checkbox" id="compactLayoutToggle" />
+      Compact layout
+    </label>
   </div>
-  <div id="humanInjectStrip" aria-label="Human inject for cli_bridge">
+  <div id="humanInjectStrip" aria-label="Human inject for cli_bridge and fused scenarios">
     <div class="hi-head">
       <div class="hi-head-main">
         <span class="hi-title">You · person_cli</span>
-        <span class="hi-sub">Controls apply while the live stream is running — same JSON as <code>POST /api/inject</code>. Sim clock must be moving.</span>
+        <span class="hi-sub">Live stream · same JSON as <code>POST /api/inject</code> · clock must run.</span>
       </div>
       <div id="injectFeedback" aria-live="polite"></div>
     </div>
@@ -396,40 +548,34 @@
         <div class="hi-card-body">
           <div class="hi-field-row">
             <div class="hi-field">
-              <label for="injectPref">Preferred temperature</label>
-              <div style="display:flex;align-items:center;gap:0.35rem">
+              <label for="injectPref">Pref °C</label>
+              <div style="display:flex;align-items:center;gap:0.28rem">
                 <input type="number" id="injectPref" step="0.5" min="14" max="28" value="22" />
-                <span class="hi-field-inline">°C</span>
               </div>
             </div>
             <button type="button" id="injectSetPref" class="hi-btn hi-btn-primary">Apply</button>
-          </div>
-          <div class="hi-btn-row">
-            <button type="button" id="injectLeave" class="hi-btn hi-btn-ghost">Leave home</button>
-            <button type="button" id="injectReturn" class="hi-btn hi-btn-ghost">Return home</button>
+            <button type="button" id="injectLeave" class="hi-btn hi-btn-ghost">Leave</button>
+            <button type="button" id="injectReturn" class="hi-btn hi-btn-ghost">Return</button>
           </div>
         </div>
       </div>
       <div class="hi-card">
         <div class="hi-card-title">Thermostat negotiation</div>
         <div class="hi-card-body">
-          <div class="hi-field">
-            <label for="injectNid">Negotiation id</label>
-            <input type="text" id="injectNid" placeholder="UUID from feed (nid …) or Use last…" autocomplete="off" spellcheck="false" />
+          <div class="hi-nid-row">
+            <div class="hi-field">
+              <label for="injectNid">Negotiation id</label>
+              <input type="text" id="injectNid" placeholder="UUID / nid …" autocomplete="off" spellcheck="false" />
+            </div>
+            <button type="button" id="injectFillNid" class="hi-btn hi-btn-secondary" title="Fill from last proposal to person_cli">Last nid</button>
           </div>
-          <button type="button" id="injectFillNid" class="hi-btn hi-btn-secondary" title="Fill from last NegotiationProposal to person_cli">Use last proposal id</button>
           <div class="hi-field-row">
             <div class="hi-field">
-              <label for="injectCounterVal">Counter-offer</label>
-              <div style="display:flex;align-items:center;gap:0.35rem">
-                <input type="number" id="injectCounterVal" step="0.5" min="14" max="28" value="20.5" />
-                <span class="hi-field-inline">°C</span>
-              </div>
+              <label for="injectCounterVal">Counter °C</label>
+              <input type="number" id="injectCounterVal" step="0.5" min="14" max="28" value="20.5" />
             </div>
-            <div class="hi-btn-row" style="align-items:flex-end">
-              <button type="button" id="injectCounter" class="hi-btn hi-btn-primary">Send counter</button>
-              <button type="button" id="injectAccept" class="hi-btn hi-btn-secondary">Accept proposal</button>
-            </div>
+            <button type="button" id="injectCounter" class="hi-btn hi-btn-primary">Counter</button>
+            <button type="button" id="injectAccept" class="hi-btn hi-btn-secondary">Accept</button>
           </div>
         </div>
       </div>
@@ -439,8 +585,8 @@
       <ol>
         <li>Start the API: <code style="user-select:all">PYTHONPATH=. uvicorn halo_simulation.server:app --reload</code> (single worker so stream and inject share one process).</li>
         <li>Open this page from that server (e.g. <code>http://127.0.0.1:8000</code>) or set <code>&lt;meta name="halo-api-origin" content="http://127.0.0.1:8000"&gt;</code> if the UI is in a preview tab.</li>
-        <li>Scenario <strong>CLI Human Bridge</strong> → <strong>Run</strong>. Wait until <strong>Sim:</strong> shows a time (not —:—).</li>
-        <li><strong>Set preference / Leave / Return</strong> work anytime the stream is open. <strong>Send counter / Send accept</strong> need a negotiation id: after a <strong>NegotiationProposal</strong> to <code>person_cli</code> appears in the feed, click <strong>Use last proposal id</strong> (or copy the <code>nid …</code> snippet).</li>
+        <li>Scenario <strong>CLI Human Bridge</strong> or <strong>Fused (full demo)</strong> → <strong>Run</strong>. Wait until <strong>Sim:</strong> shows a time (not —:—).</li>
+        <li><strong>Apply / Leave / Return</strong> while the stream is open. <strong>Counter / Accept</strong> need an id — after <strong>NegotiationProposal → person_cli</strong> appears, click <strong>Last nid</strong> or copy <code>nid …</code> from the feed.</li>
         <li>If Sim: still moves but inject says the stream is gone, the run already finished and the UI is draining the last buffered events — click <strong>Run</strong> again.</li>
         <li><strong>Human-in-the-loop:</strong> use <strong>1–2 Days</strong> and keep <strong>Pace (s)</strong> at <strong>~60</strong> so the run lasts about a minute wall-clock (inject stays open long enough to react). Set Pace to <strong>0</strong> for full-speed batch runs.</li>
       </ol>
@@ -454,19 +600,29 @@
     </div>
     <div id="colRight">
       <div class="metrics-row">
-        <div class="metric-card"><div class="l">Negotiations</div><div class="v" id="mNeg">0</div></div>
-        <div class="metric-card"><div class="l">Convergence %</div><div class="v" id="mConv">—</div></div>
-        <div class="metric-card"><div class="l">Mean satisfaction</div><div class="v" id="mSat">—</div></div>
+        <div class="metric-card" title="Count of NegotiationResolved events this run"><div class="l">Negotiations</div><div class="v" id="mNeg">0</div></div>
+        <div class="metric-card" title="Among converged rounds only: fraction that reached convergence criterion"><div class="l">Convergence %</div><div class="v" id="mConv">—</div></div>
+        <div class="metric-card" title="Running mean over rounds: averages satisfaction of every participant in that round (includes You · person_cli when they negotiated)"><div class="l">Mean satisfaction</div><div class="v" id="mSat">—</div></div>
         <div class="metric-card"><div class="l">Carbon (latest)</div><div class="v" id="mCarb">—</div></div>
       </div>
-      <div class="chart-box"><canvas id="chartLine"></canvas></div>
-      <div class="chart-box tall"><canvas id="chartBar"></canvas></div>
-      <div class="chart-box weather">
+      <div class="chart-box chart-thermostat">
+        <div id="chartLineEmpty" class="chart-empty-msg">No thermostat timeline yet — click <strong>Run</strong> or wait for negotiations.</div>
+        <canvas id="chartLine"></canvas>
+      </div>
+      <div id="chartShowerWrap" class="chart-box shower-strip chart-shower">
+        <div id="chartShowerEmpty" class="chart-empty-msg hidden">No shower tank samples yet — they appear during the run.</div>
+        <canvas id="chartShower"></canvas>
+      </div>
+      <div class="chart-box weather chart-weather">
         <div class="weather-chart-head">
-          <span id="weatherChartTitle">Open-Meteo hourly · London (full forecast window)</span>
+          <span class="weather-title-wrap">
+            <span id="weatherChartTitle">Open-Meteo hourly · London (full forecast window)</span>
+            <span id="weatherModePill" class="weather-mode-pill" title="Weather chart data source">—</span>
+          </span>
           <button type="button" id="weatherChartRefresh">Refresh</button>
         </div>
         <div class="weather-chart-wrap">
+          <div id="chartWeatherEmpty" class="chart-empty-msg">Load weather or start a run — chart builds from API or sim.</div>
           <canvas id="chartWeather"></canvas>
         </div>
         <div id="weatherChartErr" style="display:none;font-size:0.72rem;color:#f85149;margin-top:0.25rem;"></div>
@@ -495,6 +651,136 @@
     }
 
     const MIN_PER_DAY = 1440;
+    const HALO_CHART_FONT = 'system-ui, "Segoe UI", Roboto, sans-serif';
+
+    function haloChartCssVar(name, fallback) {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name);
+      const t = (v || '').trim();
+      return t || fallback;
+    }
+
+    /** Light grid lines and tabular-ish ticks shared across Cartesian charts */
+    function haloCartesianTickStyle(size) {
+      return {
+        color: haloChartCssVar('--chart-tick', '#c9d1d9'),
+        font: { size, family: HALO_CHART_FONT },
+      };
+    }
+
+    function haloCartesianScaleGrid() {
+      return {
+        grid: { color: haloChartCssVar('--chart-grid', 'rgba(72, 79, 88, 0.28)') },
+        ticks: haloCartesianTickStyle(9),
+      };
+    }
+
+    /** One axis preset; merge tick overrides (maxRotation, maxTicksLimit, …). */
+    function haloCartesianAxis(tickOverrides = {}, extra = {}) {
+      const g = haloCartesianScaleGrid();
+      return {
+        ...g,
+        ticks: Object.assign({}, g.ticks, tickOverrides),
+        ...extra,
+      };
+    }
+
+    function haloChartTooltipDefaults() {
+      return {
+        backgroundColor: '#21262dcc',
+        titleColor: '#e6edf3',
+        bodyColor: '#c9d1d9',
+        borderColor: '#30363d',
+        borderWidth: 1,
+        padding: 8,
+        titleFont: { family: HALO_CHART_FONT, size: 12, weight: '600' },
+        bodyFont: { family: HALO_CHART_FONT, size: 11 },
+        boxPadding: 4,
+      };
+    }
+
+    function haloPersonNegotiationColors() {
+      return {
+        alice: haloChartCssVar('--person-alice-chart', '#f78166'),
+        bob: haloChartCssVar('--person-bob-chart', '#79c0ff'),
+        cli: haloChartCssVar('--person-cli-chart', '#58a6ff'),
+        setpoint: haloChartCssVar('--chart-setpoint', '#8b949e'),
+      };
+    }
+
+    /** Empty-state overlays live above canvas (z-index 1); pass true to show overlay. */
+    function toggleThermostatChartEmpty(show) {
+      const el = document.getElementById('chartLineEmpty');
+      if (el) el.classList.toggle('hidden', !show);
+    }
+
+    function toggleWeatherChartEmpty(show) {
+      const el = document.getElementById('chartWeatherEmpty');
+      if (el) el.classList.toggle('hidden', !show);
+    }
+
+    function toggleShowerChartEmpty(show) {
+      const el = document.getElementById('chartShowerEmpty');
+      if (el) el.classList.toggle('hidden', !show);
+    }
+
+    function syncThermostatChartEmptyState() {
+      const hasData = chartLine && chartLine.data.labels && chartLine.data.labels.length > 0;
+      toggleThermostatChartEmpty(!hasData);
+    }
+
+    function syncWeatherChartEmptyState() {
+      if (!chartWeather) return;
+      const labs = chartWeather.data.labels || [];
+      toggleWeatherChartEmpty(labs.length === 0);
+    }
+
+    function syncShowerChartEmptyState() {
+      if (!chartShower) return;
+      const wrap = document.getElementById('chartShowerWrap');
+      const vis = !!(wrap && wrap.classList.contains('visible'));
+      const rows = chartShower.data.labels && chartShower.data.labels.length;
+      toggleShowerChartEmpty(!(vis && rows > 0));
+    }
+
+    function syncWeatherModePill() {
+      const pill = document.getElementById('weatherModePill');
+      if (!pill) return;
+      pill.classList.remove('forecast', 'sim-model', 'sim-grow');
+      if (state.weatherChartMode === 'forecast') {
+        pill.textContent = 'FORECAST';
+        pill.classList.add('forecast');
+        pill.title = 'Idle Open-Meteo hourly series (full window)';
+      } else if (state.weatherChartMode === 'sim') {
+        if (state.weatherForecastSimCache) {
+          pill.textContent = 'SIM · API';
+          pill.classList.add('sim-model');
+          pill.title = 'Simulated clock aligned with Open-Meteo hourly rows';
+        } else {
+          pill.textContent = 'SIM · LIVE PTS';
+          pill.classList.add('sim-grow');
+          pill.title = 'Outdoor °C from sim broadcasts';
+        }
+      } else {
+        pill.textContent = '—';
+        pill.title = 'Weather chart mode';
+      }
+    }
+
+    /** Softer strokes for idle forecast view vs vivid sim view */
+    function weatherForecastDatasetTemplate(muted) {
+      if (muted) {
+        return [
+          { label: 'Temperature °C', data: [], borderColor: '#5f7f98', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1.35, spanGaps: true },
+          { label: 'Feels like °C', data: [], borderColor: '#766d9a', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1.35, spanGaps: true },
+          { label: 'Wind km/h', data: [], borderColor: '#5c646e', yAxisID: 'y1', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1, spanGaps: true },
+        ];
+      }
+      return [
+        { label: 'Temperature °C', data: [], borderColor: '#79c0ff', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1.5, spanGaps: true },
+        { label: 'Feels like °C', data: [], borderColor: '#d2a8ff', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1.5, spanGaps: true },
+        { label: 'Wind km/h', data: [], borderColor: '#8b949e', yAxisID: 'y1', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1, spanGaps: true },
+      ];
+    }
     const AGENTS = [
       { id: 'person_alice', name: 'Alice', type: 'person', role: 'alice' },
       { id: 'person_bob', name: 'Bob', type: 'person', role: 'bob' },
@@ -509,15 +795,23 @@
       carbon_spike: ['person_alice','person_bob','device_thermostat','device_dishwasher','specialist_carbon','specialist_weather'],
       device_failure: ['person_alice','person_bob','device_thermostat','device_shower','specialist_carbon','specialist_weather'],
       cli_bridge: ['person_bob','person_cli','device_thermostat','specialist_carbon','specialist_weather'],
+      fused: [
+        'person_alice','person_bob','person_cli','device_thermostat','device_dishwasher',
+        'device_shower','specialist_carbon','specialist_weather',
+      ],
     };
 
+    /** Scenarios where POST /api/inject is wired (SSE active). */
+    function scenarioUsesHumanInject(scenarioId) {
+      return scenarioId === 'cli_bridge' || scenarioId === 'fused';
+    }
     const state = {
       agents: Object.fromEntries(AGENTS.map(a => [a.id, {
         status: 'idle', detail: '—', pulse: false,
       }])),
-      alice: { home: true, x: 168, y: 148, pref: 22 },
-      bob: { home: true, x: 220, y: 140, pref: 19 },
-      cli: { home: true, x: 155, y: 152, pref: 23 },
+      alice: { home: true, x: 168, y: 148, pref: 22, sleeping: false },
+      bob: { home: true, x: 220, y: 140, pref: 19, sleeping: false },
+      cli: { home: true, x: 155, y: 152, pref: 23, sleeping: false },
       thermo: { setpoint: 20, device_state: 'idle', outdoorHeatingOff: false },
       dishwasher: { state: 'idle' },
       carbon: { value: null, level: '—' },
@@ -535,7 +829,7 @@
       lastCliProposalId: null,
       /** Highest sim minute seen on `message` events this run (clock never steps backward). */
       runSimMinuteMax: -1,
-      shower: { state: 'idle' },
+      shower: { hotWaterFrac: 1.0, runState: 'idle', userId: null, sessionActive: false },
       negotiationLine: null,
       metrics: { neg: 0, convSum: 0, convN: 0, satSum: 0, satN: 0 },
       currentScenario: 'temperature_conflict',
@@ -543,12 +837,62 @@
       _floorSvgScenario: null,
     };
 
-    /** Living / kitchen / “left the house” porch (viewBox coords) for floor figures. */
-    const FLOOR_POS = {
-      bob: { living: [238, 148], kitchen: [302, 154], porch: [8, 168] },
-      alice: { living: [168, 148], porch: [22, 172] },
-      cli: { living: [155, 152], porch: [18, 176] },
-    };
+    function scenarioHasShowerAgents(scenarioId) {
+      return (SCENARIO_AGENTS[scenarioId] || []).includes('device_shower');
+    }
+
+    /** Per-scenario anchors [x,y] in viewBox coords (see buildFloorSvg). */
+    function floorZones(scenario) {
+      if (scenario === 'fused') {
+        return {
+          bath: [154, 58],
+          aliceBed: [54, 60],
+          cliBed: [252, 60],
+          bobBed: [366, 60],
+          aliceLiv: [128, 184],
+          cliLiv: [212, 184],
+          bobLiv: [246, 176],
+          bobKit: [334, 176],
+          bobPorch: [8, 170],
+          alicePorch: [14, 176],
+          cliPorch: [14, 176],
+          thermo: [134, 170],
+          negAlice: [128, 174],
+        };
+      }
+      if (scenario === 'cli_bridge') {
+        return {
+          bath: [196, 58],
+          youBed: [78, 60],
+          bobBed: [326, 60],
+          youLiv: [132, 180],
+          bobLiv: [228, 176],
+          bobKit: [300, 176],
+          bobPorch: [8, 172],
+          youPorch: [16, 178],
+          thermo: [126, 168],
+          negAlice: [132, 172],
+        };
+      }
+      return {
+        bath: [192, 58],
+        aliceBed: [70, 60],
+        bobBed: [328, 60],
+        aliceLiv: [126, 180],
+        bobLiv: [222, 176],
+        bobKit: [302, 176],
+        bobPorch: [8, 172],
+        alicePorch: [16, 178],
+        thermo: [126, 168],
+        negAlice: [126, 172],
+      };
+    }
+
+    function setShowerChartStripVisible(visible) {
+      const w = document.getElementById('chartShowerWrap');
+      if (w) w.classList.toggle('visible', !!visible);
+      syncShowerChartEmptyState();
+    }
 
     function _numOrNaN(v) {
       if (v === null || v === undefined) return NaN;
@@ -572,14 +916,6 @@
       return 'd' + day + '·' + fmtTime(simMinutes);
     }
 
-    function weatherForecastDatasetTemplate() {
-      return [
-        { label: 'Temperature °C', data: [], borderColor: '#79c0ff', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1.5, spanGaps: true },
-        { label: 'Feels like °C', data: [], borderColor: '#d2a8ff', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1.5, spanGaps: true },
-        { label: 'Wind km/h', data: [], borderColor: '#8b949e', yAxisID: 'y1', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1, spanGaps: true },
-      ];
-    }
-
     function prepareWeatherChartForSimRun() {
       state.weatherChartMode = 'sim';
       state.lastWeatherSimTs = null;
@@ -593,7 +929,10 @@
       if (title) title.textContent = 'Weather chart · preparing…';
       const errEl = document.getElementById('weatherChartErr');
       if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-      if (!chartWeather) return;
+      if (!chartWeather) {
+        syncWeatherModePill();
+        return;
+      }
       chartWeather.data.labels = [];
       chartWeather.data.datasets = [{
         label: 'Forecast °C',
@@ -610,6 +949,8 @@
       if (chartWeather.options.scales.y1) chartWeather.options.scales.y1.display = false;
       chartWeather.update('none');
       requestAnimationFrame(() => { chartWeather.resize(); });
+      syncWeatherModePill();
+      syncWeatherChartEmptyState();
     }
 
     function forecastIndexForUtcMs(timeMs, virtualMs) {
@@ -704,6 +1045,8 @@
       chartWeather.data.datasets[0].pointRadius = row.length <= 3 ? 4 : 2;
       chartWeather.update();
       requestAnimationFrame(() => { chartWeather.resize(); });
+      syncWeatherChartEmptyState();
+      syncWeatherModePill();
     }
 
     function bumpSimForecastTimelineFromEvent(data) {
@@ -728,6 +1071,8 @@
       }
       state.weatherSimNotes.push(note);
       chartWeather.update('none');
+      syncWeatherChartEmptyState();
+      syncWeatherModePill();
     }
 
     function buildLeftColumn() {
@@ -786,6 +1131,19 @@
       return state.thermo.outdoorHeatingOff ? base + ' · heating off (warm outside)' : base;
     }
 
+    function refreshShowerCard() {
+      if (!document.querySelector('[data-agent-id="device_shower"]')) return;
+      const frac = typeof state.shower.hotWaterFrac === 'number' && Number.isFinite(state.shower.hotWaterFrac)
+        ? Math.max(0, Math.min(1, state.shower.hotWaterFrac))
+        : 1;
+      const pct = Math.round(frac * 100);
+      const rs = state.shower.runState || 'idle';
+      let st = 'st-idle';
+      if (rs === 'running') st = 'st-negotiating';
+      if (rs === 'failed') st = 'st-failed';
+      setAgentCard('device_shower', st, rs, 'Hot water ' + pct + '%');
+    }
+
     function updateWeatherSourcePill(source) {
       const pill = document.querySelector('[data-agent-id="specialist_weather"] [data-weather-pill]');
       if (!pill) return;
@@ -825,19 +1183,97 @@
     /** Stick-figure human centered at (0,0); use transform on parent <g> for position. */
     function humanFigureSvg(color) {
       return `
+  <ellipse class="fig-foot-glow" cx="0" cy="21" rx="11" ry="5" fill="rgba(0,0,0,0.22)" opacity="0.75"/>
   <circle cx="0" cy="-12" r="6" fill="${color}" stroke="#fff" stroke-width="1.2"/>
   <path d="M0 -6 V8" stroke="${color}" stroke-width="3" fill="none" stroke-linecap="round"/>
   <path d="M0 0 L-11 7 M0 0 L11 7" stroke="${color}" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-  <path d="M-7 24 L0 8 L7 24" stroke="${color}" stroke-width="2.8" fill="none" stroke-linecap="round"/>`;
+  <path d="M-7 24 L0 8 L7 24" stroke="${color}" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+  <circle class="fig-state-dot" cx="0" cy="-22" r="3.5" fill="#58a6ff" opacity="0" stroke="#fff" stroke-width="1"/>`;
+    }
+
+    function applyFigureStateIndicators(rootG, personId) {
+      if (!rootG) return;
+      const dot = rootG.querySelector('.fig-state-dot');
+      if (!dot) return;
+      const sc = state.currentScenario;
+      const showering =
+        scenarioHasShowerAgents(sc) &&
+        state.shower.runState === 'running' &&
+        state.shower.userId === personId;
+      let sleeping = false;
+      if (personId === 'person_bob') sleeping = state.bob.home && state.bob.sleeping;
+      else if (personId === 'person_alice') sleeping = state.alice.home && state.alice.sleeping;
+      else if (personId === 'person_cli') sleeping = state.cli.home && state.cli.sleeping;
+      if (showering) {
+        dot.setAttribute('opacity', '1');
+        dot.setAttribute('fill', '#58a6ff');
+      } else if (sleeping) {
+        dot.setAttribute('opacity', '1');
+        dot.setAttribute('fill', '#a371f7');
+      } else {
+        dot.setAttribute('opacity', '0');
+      }
     }
 
     function buildFloorSvg() {
-      const w = 400;
+      const sc = state.currentScenario;
+      const hitlBob = sc === 'cli_bridge';
+      const isFused = sc === 'fused';
       const h = 280;
-      const isCli = state.currentScenario === 'cli_bridge';
-      const bedLeft = isCli ? 'CLI' : 'Alice';
-      const secondColor = isCli ? '#58a6ff' : '#f78166';
-      const secondName = isCli ? 'You' : 'Alice';
+      if (isFused) {
+        const w = 438;
+        return `
+<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" aria-label="Floor plan">
+  <defs>
+    <linearGradient id="doorFade" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#0d1117" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#0d1117" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="108" width="28" height="116" fill="url(#doorFade)"/>
+  <g id="porchZone" opacity="0.88">
+    <rect class="room-porch-floor" x="4" y="124" width="12" height="92" rx="2"/>
+    <text x="10" y="174" text-anchor="middle" fill="#8b949e" font-size="7" transform="rotate(-90 10 170)">out</text>
+  </g>
+  <rect class="room" x="12" y="108" width="244" height="158" />
+  <text class="room-label" x="134" y="198" text-anchor="middle" font-size="10">🛋 Living</text>
+  <rect class="room" x="264" y="108" width="162" height="158" />
+  <text class="room-label" x="345" y="198" text-anchor="middle" font-size="10">🍳 Kitchen</text>
+  <rect class="room" x="12" y="16" width="86" height="78" />
+  <text class="room-label" x="55" y="60" text-anchor="middle" font-size="10">🛏 <tspan>Bed Alice</tspan></text>
+  <rect class="room" x="104" y="16" width="102" height="78" />
+  <text class="room-label" x="155" y="54" text-anchor="middle" font-size="10">🚿 Bathroom</text>
+  <rect class="room" x="214" y="16" width="80" height="78" />
+  <text class="room-label" x="254" y="60" text-anchor="middle" font-size="10">🛏 <tspan>You</tspan></text>
+  <rect class="room" x="302" y="16" width="124" height="78" />
+  <text class="room-label" x="364" y="60" text-anchor="middle" font-size="10">🛏 <tspan>Bed Bob</tspan></text>
+  <circle id="thermoRing" class="thermo-ring" cx="134" cy="170" r="26.5" />
+  <circle id="thermoIcon" class="thermo-circle" cx="134" cy="170" r="18.5" fill="#3a5a78"/>
+  <text id="thermoText" x="134" y="173" dominant-baseline="middle" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">20</text>
+  <rect id="dwRect" class="dw-rect" x="290" y="136" width="72" height="42" fill="#484f58" />
+  <text x="326" y="160" text-anchor="middle" fill="#8b949e" font-size="9">DW</text>
+  <circle id="lightLR" class="light-dot" cx="92" cy="152" r="6" fill="#484f58"/>
+  <circle id="lightK" class="light-dot" cx="336" cy="152" r="6" fill="#484f58"/>
+  <path id="showerIcon" transform="translate(-11,-2)" class="shower-droplet" d="M165 45 Q165 60 175 55 Q170 40 165 45" fill="#58a6ff" opacity="0.45" style="display:none"/>
+  <g id="figBob" class="person-figure" transform="translate(246,176)" opacity="1">
+    ${humanFigureSvg('#79c0ff')}
+    <text x="0" y="36" text-anchor="middle" fill="#e6edf3" font-size="9" font-weight="600">Bob</text>
+  </g>
+  <g id="figAliceCli" class="person-figure" transform="translate(128,184)" opacity="1">
+    ${humanFigureSvg('#f78166')}
+    <text x="0" y="36" text-anchor="middle" fill="#e6edf3" font-size="9" font-weight="600">Alice</text>
+  </g>
+  <g id="figCliFused" class="person-figure" transform="translate(212,184)" opacity="1">
+    ${humanFigureSvg('#58a6ff')}
+    <text x="0" y="36" text-anchor="middle" fill="#e6edf3" font-size="9" font-weight="600">You</text>
+  </g>
+  <path id="negLine" class="negot-line" d="" style="display:none"/>
+</svg>`;
+      }
+      const w = 404;
+      const leftBedLabel = hitlBob ? 'You' : 'Alice';
+      const secondColor = hitlBob ? '#58a6ff' : '#f78166';
+      const secondName = hitlBob ? 'You' : 'Alice';
       return `
 <svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" aria-label="Floor plan">
   <defs>
@@ -846,95 +1282,162 @@
       <stop offset="100%" stop-color="#0d1117" stop-opacity="0"/>
     </linearGradient>
   </defs>
-  <rect x="0" y="105" width="28" height="110" fill="url(#doorFade)"/>
-  <g id="porchZone" opacity="0.85">
-    <rect x="4" y="118" width="12" height="86" rx="2" fill="#21262d" stroke="#484f58" stroke-width="1"/>
-    <text x="10" y="168" text-anchor="middle" fill="#8b949e" font-size="7" transform="rotate(-90 10 164)">out</text>
+  <rect x="0" y="110" width="28" height="112" fill="url(#doorFade)"/>
+  <g id="porchZone" opacity="0.88">
+    <rect class="room-porch-floor" x="4" y="126" width="12" height="88" rx="2"/>
+    <text x="10" y="174" text-anchor="middle" fill="#8b949e" font-size="7" transform="rotate(-90 10 170)">out</text>
   </g>
-  <rect class="room" x="20" y="100" width="200" height="120" />
-  <text class="room-label" x="110" y="165" text-anchor="middle">Living Room</text>
-  <rect class="room" x="230" y="100" width="150" height="120" />
-  <text class="room-label" x="305" y="165" text-anchor="middle">Kitchen</text>
-  <rect class="room" x="20" y="20" width="90" height="70" />
-  <text class="room-label" x="65" y="58" text-anchor="middle" font-size="9">Bed ${bedLeft}</text>
-  <rect class="room" x="120" y="20" width="90" height="70" />
-  <text class="room-label" x="165" y="52" text-anchor="middle" font-size="9">Bathroom</text>
-  <rect class="room" x="220" y="20" width="90" height="70" />
-  <text class="room-label" x="265" y="58" text-anchor="middle" font-size="9">Bed Bob</text>
-  <circle id="thermoIcon" class="thermo-circle" cx="120" cy="150" r="22" fill="#3a5a78"/>
-  <text id="thermoText" x="120" y="155" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">20</text>
-  <rect id="dwRect" class="dw-rect" x="270" y="130" width="70" height="40" fill="#484f58" />
-  <text x="305" y="154" text-anchor="middle" fill="#8b949e" font-size="9">DW</text>
-  <circle id="lightLR" class="light-dot" cx="100" cy="130" r="6" fill="#484f58"/>
-  <circle id="lightK" class="light-dot" cx="300" cy="130" r="6" fill="#484f58"/>
-  <path id="showerIcon" d="M165 45 Q165 60 175 55 Q170 40 165 45" fill="#58a6ff" opacity="0.4" style="display:none"/>
-  <g id="figBob" class="person-figure" transform="translate(238,148)" opacity="1">
+  <rect class="room" x="16" y="110" width="220" height="148" />
+  <text class="room-label" x="126" y="188" text-anchor="middle" font-size="10">🛋 Living</text>
+  <rect class="room" x="246" y="110" width="142" height="148" />
+  <text class="room-label" x="317" y="188" text-anchor="middle" font-size="10">🍳 Kitchen</text>
+  <rect class="room" x="16" y="18" width="108" height="76" />
+  <text class="room-label" x="70" y="58" text-anchor="middle" font-size="10">🛏 Bed ${leftBedLabel}</text>
+  <rect class="room" x="130" y="18" width="124" height="76" />
+  <text class="room-label" x="192" y="52" text-anchor="middle" font-size="10">🚿 Bath</text>
+  <rect class="room" x="258" y="18" width="130" height="76" />
+  <text class="room-label" x="323" y="58" text-anchor="middle" font-size="10">🛏 Bob</text>
+  <circle id="thermoRing" class="thermo-ring" cx="126" cy="168" r="26" />
+  <circle id="thermoIcon" class="thermo-circle" cx="126" cy="168" r="18" fill="#3a5a78"/>
+  <text id="thermoText" x="126" y="171" dominant-baseline="middle" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">20</text>
+  <rect id="dwRect" class="dw-rect" x="268" y="134" width="70" height="40" fill="#484f58" />
+  <text x="303" y="158" text-anchor="middle" fill="#8b949e" font-size="9">DW</text>
+  <circle id="lightLR" class="light-dot" cx="92" cy="152" r="6" fill="#484f58"/>
+  <circle id="lightK" class="light-dot" cx="310" cy="152" r="6" fill="#484f58"/>
+  <path id="showerIcon" transform="translate(26,0)" class="shower-droplet" d="M165 45 Q165 60 175 55 Q170 40 165 45" fill="#58a6ff" opacity="0.45" style="display:none"/>
+  <g id="figBob" class="person-figure" transform="translate(222,176)" opacity="1">
     ${humanFigureSvg('#79c0ff')}
     <text x="0" y="36" text-anchor="middle" fill="#e6edf3" font-size="9" font-weight="600">Bob</text>
   </g>
-  <g id="figAliceCli" class="person-figure" transform="translate(168,148)" opacity="1">
+  <g id="figAliceCli" class="person-figure" transform="translate(126,180)" opacity="1">
     ${humanFigureSvg(secondColor)}
     <text x="0" y="36" text-anchor="middle" fill="#e6edf3" font-size="9" font-weight="600">${secondName}</text>
   </g>
-  <line id="negLine" class="negot-line" x1="0" y1="0" x2="0" y2="0" style="display:none"/>
+  <path id="negLine" class="negot-line" d="" style="display:none"/>
 </svg>`;
     }
 
+    /** Any modeled person on scene — for living-room light heuristic. */
+    function livingRoomAnyoneHome() {
+      const ids = SCENARIO_AGENTS[state.currentScenario] || [];
+      let on = false;
+      if (ids.includes('person_alice')) on = on || state.alice.home;
+      if (ids.includes('person_cli')) on = on || state.cli.home;
+      if (ids.includes('person_bob')) on = on || state.bob.home;
+      return on;
+    }
+
+    /** Kitchen light follows Bob when Bob participates. */
+    function kitchenLightsBobHome() {
+      const ids = SCENARIO_AGENTS[state.currentScenario] || [];
+      return ids.includes('person_bob') && state.bob.home;
+    }
+
     function updateFloorPositions() {
-      const isCliBridge = state.currentScenario === 'cli_bridge';
+      const sc = state.currentScenario;
+      const zs = floorZones(sc);
+      const hitlBob = sc === 'cli_bridge';
+      const isFused = sc === 'fused';
       const figBob = document.getElementById('figBob');
       const figSecond = document.getElementById('figAliceCli');
       if (!figBob || !figSecond) return;
 
       const bobEvening = state.bob._minuteOfDay != null && state.bob._minuteOfDay >= 17 * 60;
+      const bathXY = (pid) => {
+        const [bx, by] = zs.bath;
+        if (pid === 'person_bob') return [bx + 12, by + 4];
+        if (pid === 'person_cli') return [bx + 6, by - 4];
+        return [bx - 12, by + 4];
+      };
+      const inShower = (pid) =>
+        scenarioHasShowerAgents(sc) && state.shower.runState === 'running' && state.shower.userId === pid;
+
       let bx;
       let by;
       let bOp = 1;
       if (!state.bob.home) {
-        bx = FLOOR_POS.bob.porch[0];
-        by = FLOOR_POS.bob.porch[1];
-        bOp = 0.4;
+        [bx, by] = zs.bobPorch;
+        bOp = 0.35;
+      } else if (state.bob.sleeping) {
+        [bx, by] = zs.bobBed;
+      } else if (inShower('person_bob')) {
+        [bx, by] = bathXY('person_bob');
       } else if (bobEvening) {
-        bx = FLOOR_POS.bob.kitchen[0];
-        by = FLOOR_POS.bob.kitchen[1];
+        [bx, by] = zs.bobKit;
       } else {
-        bx = FLOOR_POS.bob.living[0];
-        by = FLOOR_POS.bob.living[1];
+        [bx, by] = zs.bobLiv;
       }
       figBob.setAttribute('transform', `translate(${bx},${by})`);
       figBob.setAttribute('opacity', String(bOp));
 
-      const secondHome = isCliBridge ? state.cli.home : state.alice.home;
+      /** Alice / CLI stand-in figure (figAliceCli) */
       let ax;
       let ay;
-      let aOp = secondHome ? 1 : 0.42;
-      if (secondHome) {
-        if (isCliBridge) {
-          ax = state.cli.x;
-          ay = state.cli.y;
+      let aOp = 1;
+      if (hitlBob) {
+        aOp = state.cli.home ? 1 : 0.38;
+        if (!state.cli.home) {
+          [ax, ay] = zs.youPorch;
+        } else if (state.cli.sleeping) {
+          [ax, ay] = zs.youBed;
+        } else if (inShower('person_cli')) {
+          [ax, ay] = bathXY('person_cli');
         } else {
-          ax = state.alice.x;
-          ay = state.alice.y;
+          [ax, ay] = zs.youLiv;
         }
-      } else if (isCliBridge) {
-        ax = FLOOR_POS.cli.porch[0];
-        ay = FLOOR_POS.cli.porch[1];
       } else {
-        ax = FLOOR_POS.alice.porch[0];
-        ay = FLOOR_POS.alice.porch[1];
+        aOp = state.alice.home ? 1 : 0.38;
+        if (!state.alice.home) {
+          [ax, ay] = zs.alicePorch;
+        } else if (state.alice.sleeping) {
+          [ax, ay] = zs.aliceBed;
+        } else if (inShower('person_alice')) {
+          [ax, ay] = bathXY('person_alice');
+        } else {
+          [ax, ay] = zs.aliceLiv;
+        }
       }
       figSecond.setAttribute('transform', `translate(${ax},${ay})`);
       figSecond.setAttribute('opacity', String(aOp));
 
+      if (isFused) {
+        const figCli = document.getElementById('figCliFused');
+        if (figCli) {
+          let cx;
+          let cy;
+          let cOp = 1;
+          if (!state.cli.home) {
+            [cx, cy] = zs.cliPorch;
+            cOp = 0.38;
+          } else if (state.cli.sleeping) {
+            [cx, cy] = zs.cliBed;
+          } else if (inShower('person_cli')) {
+            [cx, cy] = bathXY('person_cli');
+          } else {
+            [cx, cy] = zs.cliLiv;
+          }
+          figCli.setAttribute('transform', `translate(${cx},${cy})`);
+          figCli.setAttribute('opacity', String(cOp));
+        }
+      }
+
       const nl = document.getElementById('negLine');
       if (nl && state.negotiationLine) {
         nl.style.display = '';
-        nl.setAttribute('x1', state.negotiationLine.x1);
-        nl.setAttribute('y1', state.negotiationLine.y1);
-        nl.setAttribute('x2', state.negotiationLine.x2);
-        nl.setAttribute('y2', state.negotiationLine.y2);
+        const { x1, y1, x2, y2 } = state.negotiationLine;
+        const mx = (x1 + x2) / 2 + (y2 - y1) * 0.08;
+        const my = Math.min(y1, y2) - 22;
+        nl.setAttribute('d', `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`);
       } else if (nl) {
         nl.style.display = 'none';
+      }
+
+      applyFigureStateIndicators(figBob, 'person_bob');
+      if (hitlBob) applyFigureStateIndicators(figSecond, 'person_cli');
+      else applyFigureStateIndicators(figSecond, 'person_alice');
+      if (isFused) {
+        const fg = document.getElementById('figCliFused');
+        if (fg) applyFigureStateIndicators(fg, 'person_cli');
       }
     }
 
@@ -962,25 +1465,37 @@
       if (dw) {
         const hasDw = SCENARIO_AGENTS[state.currentScenario].includes('device_dishwasher');
         dw.style.display = hasDw ? '' : 'none';
+        dw.classList.remove('dw-active', 'dw-scheduled');
         if (hasDw) {
-          if (state.dishwasher.state === 'running') dw.setAttribute('fill', '#388bfd');
-          else if (state.dishwasher.state === 'scheduled') dw.setAttribute('fill', '#d29922');
-          else dw.setAttribute('fill', '#484f58');
+          if (state.dishwasher.state === 'running') {
+            dw.setAttribute('fill', '#388bfd');
+            dw.classList.add('dw-active');
+          } else if (state.dishwasher.state === 'scheduled') {
+            dw.setAttribute('fill', '#d29922');
+            dw.classList.add('dw-scheduled');
+          } else {
+            dw.setAttribute('fill', '#484f58');
+          }
         }
       }
 
-      const isCliBridge = state.currentScenario === 'cli_bridge';
       const lrEl = document.getElementById('lightLR');
       const kEl = document.getElementById('lightK');
       if (lrEl && kEl) {
-        const lr = (isCliBridge ? state.cli.home : state.alice.home) || state.bob.home;
-        lrEl.setAttribute('fill', lr ? '#f0e060' : '#484f58');
-        kEl.setAttribute('fill', state.bob.home ? '#f0e060' : '#484f58');
+        lrEl.setAttribute('fill', livingRoomAnyoneHome() ? '#f0e060' : '#484f58');
+        kEl.setAttribute('fill', kitchenLightsBobHome() ? '#f0e060' : '#484f58');
       }
 
       const sh = document.getElementById('showerIcon');
       if (sh) {
         sh.style.display = SCENARIO_AGENTS[state.currentScenario].includes('device_shower') ? 'block' : 'none';
+        sh.classList.remove('shower-pulse');
+        if (sh.style.display !== 'none' && typeof state.shower.hotWaterFrac === 'number' && Number.isFinite(state.shower.hotWaterFrac)) {
+          const frac = Math.max(0, Math.min(1, state.shower.hotWaterFrac));
+          const a = 0.22 + 0.72 * frac;
+          sh.setAttribute('opacity', String(a));
+          if (state.shower.runState === 'running') sh.classList.add('shower-pulse');
+        }
       }
 
       updateFloorPositions();
@@ -996,6 +1511,7 @@
         NegotiationResolved: '#a371f7',
         CarbonIntensityUpdate: '#79c0ff',
         DeviceFailureNotice: '#f85149',
+        DeviceTelemetry: '#79c0ff',
         default: '#8b949e',
       };
       const c = colors[type] || colors.default;
@@ -1018,7 +1534,10 @@
     function updateHumanInjectStripVisibility() {
       const strip = document.getElementById('humanInjectStrip');
       const sc = document.getElementById('scenario').value;
-      strip.classList.toggle('visible', sc === 'cli_bridge' || state.streamScenario === 'cli_bridge');
+      strip.classList.toggle(
+        'visible',
+        scenarioUsesHumanInject(sc) || scenarioUsesHumanInject(state.streamScenario),
+      );
     }
 
     function injectUiFeedback(msg, cls) {
@@ -1037,9 +1556,9 @@
 
     async function postHumanInject(body) {
       const scenarioNow = document.getElementById('scenario').value;
-      if (scenarioNow !== 'cli_bridge' && state.streamScenario !== 'cli_bridge') {
+      if (!scenarioUsesHumanInject(scenarioNow) && !scenarioUsesHumanInject(state.streamScenario)) {
         injectUiFeedback(
-          'Human inject only applies to **CLI Human Bridge**. Pick that scenario, click **Run**, then use the buttons here.',
+          'Human inject only applies to **CLI Human Bridge** or **Fused**. Pick one of those scenarios, click **Run**, then use the buttons here.',
           'err',
         );
         return;
@@ -1057,9 +1576,12 @@
         if (!res.ok) {
           let d = data && data.detail != null ? data.detail : `HTTP ${res.status}`;
           if (typeof d !== 'string') d = JSON.stringify(d);
-          if (res.status === 503 && /no active cli_bridge stream/i.test(d)) {
+          if (
+            res.status === 503 &&
+            (/no active human-in-loop stream/i.test(d) || /no active cli_bridge stream/i.test(d))
+          ) {
             d =
-              'No inject queue — the **CLI Human Bridge** stream is not active, or the run **already finished** (common with **14 Days**: the sim ends in a fraction of a second and the server drops the queue). Use **1–2 Days**, click **Run** again, then inject while the status still says Live stream… (not Complete). Single uvicorn worker.';
+              'No inject queue — the **human-in-loop** stream (`cli_bridge` or `fused`) is not active, or the run **already finished** (common with **14 Days**). Use **1–2 Days**, click **Run** again, then inject while the status still says Live stream… (not Complete). Single uvicorn worker.';
           }
           injectUiFeedback(d, 'err');
           return;
@@ -1090,69 +1612,117 @@
       eventQueue.push({ kind, data, runId: streamRunId });
     }
 
-    let chartLine, chartBar, chartWeather;
+    let chartLine, chartWeather, chartShower;
     let weatherSeriesRaw = null;
-    const lineData = { labels: [], setpoint: [], alice: [], bob: [] };
-    const barData = { labels: [], iters: [], colors: [] };
+
+    function configureNegotiationLineChartForScenario() {
+      if (!chartLine) return;
+      const hitl = scenarioUsesHumanInject(state.streamScenario || state.currentScenario);
+      const c = haloPersonNegotiationColors();
+      chartLine.data.datasets[0].borderColor = c.setpoint;
+      const ds = chartLine.data.datasets;
+      while (ds.length > 1) ds.pop();
+      ds.push(
+        { label: 'Alice', data: [], borderColor: c.alice, tension: 0.2, pointRadius: 2, spanGaps: true },
+        { label: 'Bob', data: [], borderColor: c.bob, tension: 0.2, pointRadius: 2, spanGaps: true },
+      );
+      if (hitl) {
+        ds.push({
+          label: 'You (CLI)',
+          data: [],
+          borderColor: c.cli,
+          tension: 0.2,
+          pointRadius: 2,
+          spanGaps: true,
+        });
+      }
+      chartLine.update('none');
+    }
+
+    function appendShowerChartRow(timestampSimMins, pct01, showerDoneMarker) {
+      if (
+        !chartShower ||
+        !scenarioHasShowerAgents(state.streamScenario || state.currentScenario)
+      ) return;
+      const ts = timestampSimMins;
+      const lab =
+        typeof ts === 'number' && Number.isFinite(ts)
+          ? weatherSimAxisLabel(ts)
+          : fmtTime(ts);
+      const pct = pct01 != null ? Math.max(0, Math.min(1, pct01)) : 0;
+      chartShower.data.labels.push(lab);
+      chartShower.data.datasets[0].data.push(Math.round(pct * 1000) / 10);
+      chartShower.data.datasets[1].data.push(showerDoneMarker ? 100 : null);
+      chartShower.update('none');
+      syncShowerChartEmptyState();
+    }
+
+    function showerChartMarkCompleteOnLatestRow() {
+      if (
+        !chartShower ||
+        !scenarioHasShowerAgents(state.streamScenario || state.currentScenario)
+      ) return;
+      const d1 = chartShower.data.datasets[1].data;
+      const ix = chartShower.data.datasets[0].data.length - 1;
+      if (ix >= 0) d1[ix] = 100;
+      chartShower.update('none');
+      syncShowerChartEmptyState();
+    }
 
     function initCharts() {
+      const nc = haloPersonNegotiationColors();
       const ctxL = document.getElementById('chartLine').getContext('2d');
       chartLine = new Chart(ctxL, {
         type: 'line',
         data: {
           labels: [],
           datasets: [
-            { label: 'Setpoint', data: [], borderColor: '#8b949e', tension: 0.2, pointRadius: 2 },
-            { label: 'Alice pref', data: [], borderColor: '#f78166', tension: 0.2, pointRadius: 2 },
-            { label: 'Bob pref', data: [], borderColor: '#79c0ff', tension: 0.2, pointRadius: 2 },
+            { label: 'Setpoint', data: [], borderColor: nc.setpoint, tension: 0.2, pointRadius: 2, spanGaps: true },
           ],
         },
         options: {
           responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
           scales: {
-            x: { ticks: { maxRotation: 45, font: { size: 9 } } },
-            y: { title: { display: true, text: '°C' } },
+            x: haloCartesianAxis({ maxRotation: 45, maxTicksLimit: 14 }),
+            y: haloCartesianAxis({}, { title: { display: true, text: '°C', font: { family: HALO_CHART_FONT, size: 11 } } }),
           },
-          plugins: { legend: { labels: { boxWidth: 10, font: { size: 10 } } } },
+          plugins: {
+            legend: { labels: { boxWidth: 10, font: { size: 10, family: HALO_CHART_FONT } } },
+            tooltip: haloChartTooltipDefaults(),
+          },
         },
       });
-      const ctxB = document.getElementById('chartBar').getContext('2d');
-      chartBar = new Chart(ctxB, {
-        type: 'bar',
-        data: { labels: [], datasets: [{ label: 'Iterations', data: [], backgroundColor: [] }] },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          scales: { y: { beginAtZero: true, title: { display: true, text: 'Iterations' } } },
-          plugins: { legend: { display: false } },
-        },
-      });
+      const mutedFc = weatherForecastDatasetTemplate(true);
       const ctxW = document.getElementById('chartWeather').getContext('2d');
       chartWeather = new Chart(ctxW, {
         type: 'line',
         data: {
           labels: [],
-          datasets: [
-            { label: 'Temperature °C', data: [], borderColor: '#79c0ff', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1.5, spanGaps: true },
-            { label: 'Feels like °C', data: [], borderColor: '#d2a8ff', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1.5, spanGaps: true },
-            { label: 'Wind km/h', data: [], borderColor: '#8b949e', yAxisID: 'y1', tension: 0.15, pointRadius: 0, pointHitRadius: 6, borderWidth: 1, spanGaps: true },
-          ],
+          datasets: mutedFc,
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
           scales: {
-            x: { ticks: { maxRotation: 45, font: { size: 8 }, maxTicksLimit: 16 } },
-            y: { title: { display: true, text: '°C' }, position: 'left' },
-            y1: {
-              title: { display: true, text: 'Wind km/h' },
-              position: 'right',
-              grid: { drawOnChartArea: false },
-            },
+            x: haloCartesianAxis(Object.assign({ maxRotation: 45, maxTicksLimit: 16 }, haloCartesianTickStyle(8))),
+            y: haloCartesianAxis({}, {
+              title: { display: true, text: '°C', font: { family: HALO_CHART_FONT, size: 11 } },
+              position: 'left',
+            }),
+            y1: Object.assign(
+              {},
+              haloCartesianAxis({}, {
+                title: { display: true, text: 'Wind km/h', font: { family: HALO_CHART_FONT, size: 11 } },
+                position: 'right',
+              }),
+              { grid: { drawOnChartArea: false, color: haloChartCssVar('--chart-grid', 'rgba(72, 79, 88, 0.28)') } },
+            ),
           },
           plugins: {
-            legend: { labels: { boxWidth: 10, font: { size: 9 } } },
-            tooltip: {
+            legend: { labels: { boxWidth: 10, font: { size: 9, family: HALO_CHART_FONT } } },
+            tooltip: Object.assign({}, haloChartTooltipDefaults(), {
               callbacks: {
                 afterBody(items) {
                   if (!items.length) return [];
@@ -1177,10 +1747,77 @@
                   return [`WMO ${code} · ${cond}`];
                 },
               },
-            },
+            }),
           },
         },
       });
+      configureNegotiationLineChartForScenario();
+      const ctxSh = document.getElementById('chartShower');
+      if (ctxSh) {
+        chartShower = new Chart(ctxSh.getContext('2d'), {
+          type: 'line',
+          data: {
+            labels: [],
+            datasets: [
+              {
+                label: 'Hot water %',
+                data: [],
+                borderColor: nc.cli,
+                backgroundColor: 'rgba(88, 166, 255, 0.08)',
+                fill: true,
+                tension: 0.25,
+                pointRadius: 1,
+                spanGaps: true,
+              },
+              {
+                label: 'Shower completed',
+                data: [],
+                borderColor: nc.alice,
+                backgroundColor: nc.alice,
+                showLine: false,
+                pointRadius(ctx) {
+                  const v = ctx.raw;
+                  return v != null && v > 0 ? 9 : 0;
+                },
+                spanGaps: true,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+              x: haloCartesianAxis({ maxRotation: 45, maxTicksLimit: 14 }),
+              y: {
+                ...haloCartesianAxis({}, {
+                  title: { display: true, text: '%', font: { family: HALO_CHART_FONT, size: 11 } },
+                }),
+                min: 0,
+                max: 102,
+                ticks: Object.assign({}, haloCartesianTickStyle(9), {
+                  stepSize: 10,
+                  callback(val) {
+                    if (val === 100) return '100 (full)';
+                    return val;
+                  },
+                }),
+              },
+            },
+            plugins: {
+              legend: { labels: { boxWidth: 10, font: { size: 9, family: HALO_CHART_FONT } } },
+              tooltip: Object.assign({}, haloChartTooltipDefaults(), {
+                callbacks: {
+                  label(ctx) {
+                    if (ctx.datasetIndex === 1 && ctx.raw) return 'Shower completed';
+                    return ctx.dataset.label + ': ' + (ctx.raw != null ? ctx.raw.toFixed(1) : '');
+                  },
+                },
+              }),
+            },
+          },
+        });
+      }
     }
 
     async function loadWeatherSeriesChart() {
@@ -1195,6 +1832,7 @@
       state.weatherSimNotes = [];
       state.weatherForecastSimCache = null;
       state.maxSimMinutesForWeatherChart = 0;
+      syncWeatherModePill();
       try {
         const res = await fetch(haloApiUrl('/api/weather_series'), { cache: 'no-store' });
         if (simStreamActive && state.weatherChartMode === 'sim') return;
@@ -1206,20 +1844,23 @@
         weatherSeriesRaw = d;
         const labels = times.map(t => String(t).replace('T', ' ').slice(5, 16));
         chartWeather.data.labels = labels;
-        chartWeather.data.datasets = weatherForecastDatasetTemplate();
+        chartWeather.data.datasets = weatherForecastDatasetTemplate(true);
         chartWeather.data.datasets[0].data = (d.temperature_2m || []).map(_numOrNaN);
         chartWeather.data.datasets[1].data = (d.apparent_temperature || []).map(_numOrNaN);
         chartWeather.data.datasets[2].data = (d.wind_speed_10m || []).map(_numOrNaN);
         if (chartWeather.options.scales.y1) chartWeather.options.scales.y1.display = true;
         chartWeather.update();
         requestAnimationFrame(() => { chartWeather.resize(); });
+        syncWeatherChartEmptyState();
       } catch (e) {
         console.warn('Weather series chart failed', e);
         if (errEl) {
           errEl.style.display = 'block';
           errEl.textContent = 'Could not load weather series: ' + (e && e.message ? e.message : e);
         }
+        syncWeatherChartEmptyState();
       }
+      syncWeatherModePill();
     }
 
     function processOneEvent(kind, data) {
@@ -1256,29 +1897,32 @@
           document.getElementById('mSat').textContent = (state.metrics.satSum / state.metrics.satN).toFixed(3);
         }
         state.thermo.setpoint = data.final_value;
-        state.negotiationLine = { x1: 168, y1: 136, x2: 120, y2: 150 };
+        const nz = floorZones(state.streamScenario || state.currentScenario);
+        state.negotiationLine = {
+          x1: nz.negAlice[0],
+          y1: nz.negAlice[1] - 14,
+          x2: nz.thermo[0],
+          y2: nz.thermo[1],
+        };
         setTimeout(() => { state.negotiationLine = null; updateFloor(); }, 800);
         const prefs = data.participant_preferences || {};
         const tlab = fmtTime(data.timestamp);
         chartLine.data.labels.push(tlab);
         chartLine.data.datasets[0].data.push(data.final_value);
-        chartLine.data.datasets[1].data.push(
-          prefs.person_cli != null ? prefs.person_cli : prefs.person_alice != null ? prefs.person_alice : null,
-        );
-        chartLine.data.datasets[2].data.push(prefs.person_bob != null ? prefs.person_bob : null);
+        const aliceV = prefs.person_alice != null ? prefs.person_alice : null;
+        const bobV = prefs.person_bob != null ? prefs.person_bob : null;
+        const cliV = prefs.person_cli != null ? prefs.person_cli : null;
+        const dss = chartLine.data.datasets;
+        if (dss[1]) dss[1].data.push(aliceV);
+        if (dss[2]) dss[2].data.push(bobV);
+        if (dss[3]) dss[3].data.push(cliV);
         chartLine.update('none');
-        const it = data.iterations;
-        let col = '#3fb950';
-        if (it > 7) col = '#f85149';
-        else if (it > 3) col = '#d29922';
-        chartBar.data.labels.push('#' + state.metrics.neg);
-        chartBar.data.datasets[0].data.push(it);
-        chartBar.data.datasets[0].backgroundColor.push(col);
-        chartBar.update('none');
+        syncThermostatChartEmptyState();
         updateFloor();
         setAgentCard('device_thermostat', 'st-resolved', 'resolved', data.final_value.toFixed(1) + '°C comfort resolved');
       }
       if (kind === 'failure') {
+        if (data.device_id === 'device_shower') state.shower.runState = 'failed';
         setAgentCard(data.device_id, 'st-failed', 'failed', 'recovery: ' + (data.recovery_succeeded ? 'ok' : 'pending'));
       }
       if (kind === 'learning') {
@@ -1292,23 +1936,67 @@
         if (data.state_key === 'presence') {
           if (id === 'person_alice') {
             state.alice.home = v === 'home';
-            setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', v, state.alice.pref + '°C preferred');
+            if (v === 'away') state.alice.sleeping = false;
+            const z = state.alice.sleeping && state.alice.home ? ' · in bed' : '';
+            const stTxt = state.alice.sleeping && state.alice.home ? 'sleeping' : v;
+            setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', stTxt,
+              state.alice.pref + '°C preferred | ' + (v === 'home' ? 'home' : 'away') + z);
           }
           if (id === 'person_bob') {
             state.bob.home = v === 'home';
-            setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', v, state.bob.pref + '°C preferred');
+            if (v === 'away') state.bob.sleeping = false;
+            const z = state.bob.sleeping && state.bob.home ? ' · in bed' : '';
+            const stTxt = state.bob.sleeping && state.bob.home ? 'sleeping' : v;
+            setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', stTxt,
+              state.bob.pref + '°C preferred | ' + (v === 'home' ? 'home' : 'away') + z);
           }
           if (id === 'person_cli') {
             state.cli.home = v === 'home';
-            setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', v, state.cli.pref + '°C preferred');
+            if (v === 'away') state.cli.sleeping = false;
+            const z = state.cli.sleeping && state.cli.home ? ' · in bed' : '';
+            const stTxt = state.cli.sleeping && state.cli.home ? 'sleeping' : v;
+            setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', stTxt,
+              state.cli.pref + '°C preferred | ' + (v === 'home' ? 'home' : 'away') + z);
+          }
+        }
+        if (data.state_key === 'activity') {
+          if (id === 'person_alice') state.alice.sleeping = v === 'sleeping';
+          if (id === 'person_bob') state.bob.sleeping = v === 'sleeping';
+          if (id === 'person_cli') state.cli.sleeping = v === 'sleeping';
+          if (id === 'person_alice') {
+            const st = !state.alice.home ? ['st-away','away'] : state.alice.sleeping ? ['st-home','sleeping'] : ['st-home','home'];
+            const z = state.alice.sleeping && state.alice.home ? ' · in bed' : '';
+            setAgentCard(id, st[0], st[1], state.alice.pref + '°C preferred | ' + (state.alice.home ? 'home' : 'away') + z);
+          }
+          if (id === 'person_bob') {
+            const st = !state.bob.home ? ['st-away','away'] : state.bob.sleeping ? ['st-home','sleeping'] : ['st-home','home'];
+            const z = state.bob.sleeping && state.bob.home ? ' · in bed' : '';
+            setAgentCard(id, st[0], st[1], state.bob.pref + '°C preferred | ' + (state.bob.home ? 'home' : 'away') + z);
+          }
+          if (id === 'person_cli') {
+            const st = !state.cli.home ? ['st-away','away'] : state.cli.sleeping ? ['st-home','sleeping'] : ['st-home','home'];
+            const z = state.cli.sleeping && state.cli.home ? ' · in bed' : '';
+            setAgentCard(id, st[0], st[1], state.cli.pref + '°C preferred | ' + (state.cli.home ? 'home' : 'away') + z);
           }
         }
         if (data.state_key === 'preferred_temperature') {
           const vNum = typeof v === 'number' && Number.isFinite(v) ? v : parseFloat(String(v));
           if (Number.isFinite(vNum)) {
-            if (id === 'person_alice') { state.alice.pref = vNum; setAgentCard(id, 'st-home', 'home', vNum + '°C preferred | ' + (state.alice.home ? 'home' : 'away')); }
-            if (id === 'person_bob') { state.bob.pref = vNum; setAgentCard(id, 'st-home', 'home', vNum + '°C preferred | ' + (state.bob.home ? 'home' : 'away')); }
-            if (id === 'person_cli') { state.cli.pref = vNum; setAgentCard(id, 'st-home', 'home', vNum + '°C preferred | ' + (state.cli.home ? 'home' : 'away')); }
+            if (id === 'person_alice') {
+              state.alice.pref = vNum;
+              const z = state.alice.sleeping && state.alice.home ? ' · in bed' : '';
+              setAgentCard(id, 'st-home', 'home', vNum + '°C preferred | ' + (state.alice.home ? 'home' : 'away') + z);
+            }
+            if (id === 'person_bob') {
+              state.bob.pref = vNum;
+              const z = state.bob.sleeping && state.bob.home ? ' · in bed' : '';
+              setAgentCard(id, 'st-home', 'home', vNum + '°C preferred | ' + (state.bob.home ? 'home' : 'away') + z);
+            }
+            if (id === 'person_cli') {
+              state.cli.pref = vNum;
+              const z = state.cli.sleeping && state.cli.home ? ' · in bed' : '';
+              setAgentCard(id, 'st-home', 'home', vNum + '°C preferred | ' + (state.cli.home ? 'home' : 'away') + z);
+            }
           }
         }
         if (data.state_key === 'device_state') {
@@ -1322,6 +2010,28 @@
             state.dishwasher.state = v === 'running' ? 'running' : v === 'scheduled' ? 'scheduled' : 'idle';
             setAgentCard(id, 'st-idle', state.dishwasher.state, '—');
           }
+          if (id === 'device_shower') {
+            const prev = state.shower.runState || 'idle';
+            state.shower.runState = v || 'idle';
+            if (v === 'running') state.shower.sessionActive = true;
+            if (v === 'failed') {
+              state.shower.sessionActive = false;
+              state.shower.userId = null;
+            }
+            if (prev === 'running' && v === 'idle' && state.shower.sessionActive) {
+              showerChartMarkCompleteOnLatestRow();
+              state.shower.sessionActive = false;
+            }
+            refreshShowerCard();
+          }
+        }
+        if (data.state_key === 'shower_user' && id === 'device_shower') {
+          state.shower.userId = typeof v === 'string' && v ? v : null;
+        }
+        if (data.state_key === 'hot_water_fraction' && id === 'device_shower' && typeof v === 'number' && Number.isFinite(v)) {
+          state.shower.hotWaterFrac = v;
+          appendShowerChartRow(data.timestamp, v, false);
+          refreshShowerCard();
         }
         if (data.state_key === 'target_temp' && typeof v === 'number' && id === 'device_thermostat') {
           state.thermo.setpoint = v;
@@ -1388,13 +2098,21 @@
       document.getElementById('mSat').textContent = '—';
       document.getElementById('mCarb').textContent = '—';
       feedEl.innerHTML = '';
+      state.alice.sleeping = false;
+      state.bob.sleeping = false;
+      state.cli.sleeping = false;
+      state.shower = { hotWaterFrac: 1.0, runState: 'idle', userId: null, sessionActive: false };
+      refreshShowerCard();
       chartLine.data.labels = [];
       chartLine.data.datasets.forEach(d => d.data = []);
       chartLine.update('none');
-      chartBar.data.labels = [];
-      chartBar.data.datasets[0].data = [];
-      chartBar.data.datasets[0].backgroundColor = [];
-      chartBar.update('none');
+      if (chartShower) {
+        chartShower.data.labels = [];
+        chartShower.data.datasets.forEach(d => { d.data = []; });
+        chartShower.update('none');
+      }
+      toggleThermostatChartEmpty(true);
+      syncShowerChartEmptyState();
     }
 
     function startStream() {
@@ -1420,8 +2138,11 @@
       state.lastCliProposalId = null;
       state.currentScenario = scenario;
       buildLeftColumn();
+      refreshShowerCard();
       updateFloor();
       updateHumanInjectStripVisibility();
+      configureNegotiationLineChartForScenario();
+      setShowerChartStripVisible(scenarioHasShowerAgents(scenario));
 
       if (scenarioHasWeather(scenario)) {
         prepareWeatherChartForSimRun();
@@ -1442,6 +2163,8 @@
           } else if (el) {
             el.textContent = 'Outdoor °C (synthetic) · broadcast samples (forecast fetch failed)';
           }
+          syncWeatherModePill();
+          syncWeatherChartEmptyState();
         });
       } else {
         void loadWeatherSeriesChart();
@@ -1586,9 +2309,19 @@
     });
     document.getElementById('scenario').addEventListener('change', e => {
       state.currentScenario = e.target.value;
+      const ip = document.getElementById('injectPref');
+      if (e.target.value === 'fused') {
+        ip.value = '25';
+        state.cli.pref = 25;
+      } else if (e.target.value === 'cli_bridge') {
+        ip.value = '23';
+        state.cli.pref = 23;
+      }
       buildLeftColumn();
+      refreshShowerCard();
       updateFloor();
       updateHumanInjectStripVisibility();
+      setShowerChartStripVisible(scenarioHasShowerAgents(e.target.value));
       injectUiFeedback('', '');
     });
 
@@ -1610,7 +2343,7 @@
       const nid = String(document.getElementById('injectNid').value || '').trim();
       const val = parseFloat(String(document.getElementById('injectCounterVal').value || '0'));
       if (!nid) {
-        injectUiFeedback('Negotiation id required — use **Use last proposal id** after a proposal to person_cli, or paste the nid from the feed.', 'err');
+        injectUiFeedback('Negotiation id required — click **Last nid** after a proposal to person_cli, or paste from the feed.', 'err');
         return;
       }
       void postHumanInject({ op: 'send_counter', value: val, negotiation_id: nid });
@@ -1618,14 +2351,41 @@
     document.getElementById('injectAccept').addEventListener('click', () => {
       const nid = String(document.getElementById('injectNid').value || '').trim();
       if (!nid) {
-        injectUiFeedback('Negotiation id required — **Use last proposal id** or copy nid from the feed.', 'err');
+        injectUiFeedback('Negotiation id required — **Last nid** or copy from feed.', 'err');
         return;
       }
       void postHumanInject({ op: 'send_accept', negotiation_id: nid });
     });
 
     initCharts();
+    (function haloCompactLayoutInit() {
+      const KEY = 'haloUiCompactLayout';
+      const chk = document.getElementById('compactLayoutToggle');
+      if (!chk) return;
+      function apply(on) {
+        document.body.classList.toggle('compact-layout', !!on);
+        requestAnimationFrame(() => {
+          try {
+            if (chartLine) chartLine.resize();
+            if (chartWeather) chartWeather.resize();
+            if (chartShower) chartShower.resize();
+          } catch (_) {}
+        });
+      }
+      chk.checked = localStorage.getItem(KEY) === '1';
+      apply(chk.checked);
+      chk.addEventListener('change', () => {
+        localStorage.setItem(KEY, chk.checked ? '1' : '0');
+        apply(chk.checked);
+      });
+    })();
+    syncWeatherModePill();
+    syncThermostatChartEmptyState();
+    syncWeatherChartEmptyState();
+    syncShowerChartEmptyState();
     buildLeftColumn();
+    refreshShowerCard();
+    setShowerChartStripVisible(scenarioHasShowerAgents(state.currentScenario));
     updateFloor();
     updateHumanInjectStripVisibility();
     checkApiStatus();

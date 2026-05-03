@@ -6,6 +6,9 @@ Contract for queue items (each is a ``dict``):
   ``PreferenceDeclaration`` (sender ``person_cli``, recipient ``broadcast``).
 
 - ``{"op": "leave"}`` / ``{"op": "return"}`` — same presence side-effects as ``PersonAgent`` (state + notice).
+  For ``CliPersonAgent`` (default **manual_schedule**) there is **no scripted** wake / leave /
+  return / sleep clock — inject these (and ``set_pref``) when **you** want the human to move or
+  re-declare comfort.
 
 - ``{"op": "send_counter", "value": <float>, "negotiation_id": "<uuid>"}`` — send ``NegotiationCounter`` from
   ``person_cli`` to ``device_thermostat`` (must match an active proposal).

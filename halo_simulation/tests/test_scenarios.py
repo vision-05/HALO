@@ -7,8 +7,11 @@ import os
 import pytest
 
 from halo_simulation.agents.base_agent import BaseAgent
+import queue
+
 from halo_simulation.scenarios.carbon_spike import CarbonSpikeScenario
 from halo_simulation.scenarios.device_failure import DeviceFailureScenario
+from halo_simulation.scenarios.fused import FusedScenario
 from halo_simulation.scenarios.temperature_conflict import TemperatureConflictScenario
 
 
@@ -28,6 +31,12 @@ def test_device_failure_runs():
     sc = DeviceFailureScenario(seed=2, days=2)
     stats = sc.run_simulation()
     assert stats["total_failures"] >= 0
+
+
+def test_fused_runs():
+    sc = FusedScenario(seed=3, days=2, inject_queue=queue.Queue())
+    stats = sc.run_simulation()
+    assert stats["total_negotiations"] >= 0
 
 
 def test_convergence_rate_14_days():

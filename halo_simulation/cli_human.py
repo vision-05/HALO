@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Interactive CLI human bridge for ``cli_bridge`` (stdin → ``threading.Queue`` → SimPy ``BridgeInjector``).
-PYTHONPATH=. python -m halo_simulation.cli_human --days 2 --seed 42 --demo-wall-seconds 60
+"""Interactive human bridge: stdin → ``threading.Queue`` → SimPy ``BridgeInjector``.
+PYTHONPATH=. python -m halo_simulation.cli_human --scenario fused --days 2 --seed 42 --demo-wall-seconds 60
 
 
-**Dashboard / SSE:** start the FastAPI server, pick scenario ``cli_bridge``, then POST JSON commands
-to ``/api/inject`` (same keys as the queue: ``op`` + fields). Example::
+**Dashboard / SSE:** start FastAPI, pick scenario ``cli_bridge`` **or** ``fused``, then ``POST /api/inject`` with the same keys as the queue (``op`` + fields). Example::
 
     curl -s -X POST http://127.0.0.1:8000/api/inject \\
       -H 'Content-Type: application/json' \\
       -d '{\"op\":\"set_pref\",\"value\":21.5}'
 
-``GET /stream?scenario=cli_bridge&...`` must be running so the inject queue is active.
+``GET /stream?scenario=<cli_bridge|fused>&...`` must be running so the inject queue is active.
 """
 
 from __future__ import annotations
@@ -25,6 +24,12 @@ import time
 from halo_simulation import config
 from halo_simulation.human_bridge import spawn_stdin_command_thread
 from halo_simulation.scenarios.cli_bridge import CliBridgeScenario
+from halo_simulation.scenarios.fused import FusedScenario
+
+_HUMAN_SCENARIO = {
+    "cli_bridge": CliBridgeScenario,
+    "fused": FusedScenario,
+}
 
 
 def _configure_logging(debug: bool) -> None:
@@ -48,13 +53,21 @@ HALO human bridge — type commands (one per line):
     )
 
 
-def run_interactive(seed: int, days: int, debug: bool, warmup_sec: float, demo_wall_seconds: float = 0.0) -> int:
+def run_interactive(
+    scenario: str,
+    seed: int,
+    days: int,
+    debug: bool,
+    warmup_sec: float,
+    demo_wall_seconds: float = 0.0,
+) -> int:
     _configure_logging(debug)
     inbound: queue.Queue = queue.Queue()
     status_reply: queue.Queue = queue.Queue(maxsize=4)
     stop = threading.Event()
 
-    sc = CliBridgeScenario(seed, days, inbound, status_reply=status_reply)
+    ctor = _HUMAN_SCENARIO[scenario]
+    sc = ctor(seed, days, inbound, status_reply=status_reply)
 
     _banner()
     # Stdin thread must start before any `input()` on the main thread — otherwise the first
@@ -119,7 +132,13 @@ def run_interactive(seed: int, days: int, debug: bool, warmup_sec: float, demo_w
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="HALO CLI human bridge (cli_bridge scenario)")
+    p = argparse.ArgumentParser(description="HALO CLI human bridge (cli_bridge or fused)")
+    p.add_argument(
+        "--scenario",
+        choices=tuple(_HUMAN_SCENARIO.keys()),
+        default="cli_bridge",
+        help="Human-in-the-loop scenario (default cli_bridge)",
+    )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--days", type=int, default=2, help="Simulated days (keep small for interactive demo)")
     p.add_argument(
@@ -146,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     w = 0.0 if args.no_warmup else max(0.0, float(args.warmup))
     return run_interactive(
+        args.scenario,
         args.seed,
         args.days,
         args.debug,

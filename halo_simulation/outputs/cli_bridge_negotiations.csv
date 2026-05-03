@@ -1,6 +1,1 @@
-timestamp,scenario,device_id,participants,iterations,converged,final_value,carbon_intensity,fallback_used,satisfaction_person_cli,satisfaction_person_bob,preference_person_cli,preference_person_bob
-429.57175619631647,cli_bridge,device_thermostat,"person_cli,person_bob",1,True,20.754716981132074,259.9675570894029,False,0.8396226415094339,0.8746630727762805,23.0,19.0
-1036.2577679370968,cli_bridge,device_thermostat,"person_cli,person_bob",1,True,20.8,186.4738361437974,False,0.842857142857143,0.8714285714285714,23.0,19.0
-1813.0454545377133,cli_bridge,device_thermostat,"person_cli,person_bob",1,True,20.8,225.84562946027444,False,0.842857142857143,0.8714285714285714,23.0,19.0
-1838.603764384568,cli_bridge,device_thermostat,"person_cli,person_bob",1,True,20.8,237.2131427670375,False,0.842857142857143,0.8714285714285714,23.0,19.0
-2466.930323887369,cli_bridge,device_thermostat,"person_cli,person_bob",1,True,20.754716981132074,304.38771120952805,False,0.8396226415094339,0.8746630727762805,23.0,19.0
+
