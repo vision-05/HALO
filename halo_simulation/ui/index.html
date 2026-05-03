@@ -85,6 +85,10 @@
     .dw-rect { rx: 4; }
     .light-dot { stroke: #30363d; stroke-width: 1; }
     .person-dot { stroke: #fff; stroke-width: 2; }
+    /* Smooth floor-plan movement (Bob / CLI or Alice); avoid rebuilding SVG every tick. */
+    #floorWrap svg .person-figure {
+      transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s ease;
+    }
     .negot-line { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; fill: none; animation: dash 0.8s linear infinite; }
     @keyframes dash { to { stroke-dashoffset: -20; } }
     #feed {
@@ -144,27 +148,206 @@
     .weather-source-pill.live { background: #22c55e33; color: #22c55e; }
     .weather-source-pill.synth { background: #484f58; color: #9ca3af; }
     #humanInjectStrip {
-      display: none; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.75rem;
-      padding: 0.4rem 0.75rem; background: #161b22; border-bottom: 1px solid #30363d;
-      font-size: 0.78rem;
+      display: none;
+      flex-direction: column;
+      gap: 0.65rem;
+      padding: 0.65rem 1rem 0.75rem;
+      background: linear-gradient(180deg, #1a222d 0%, #161b22 100%);
+      border-bottom: 1px solid #30363d;
+      font-size: 0.8rem;
       flex-shrink: 0;
       position: relative;
       z-index: 6;
       pointer-events: auto;
     }
     #humanInjectStrip.visible { display: flex; }
-    #humanInjectStrip .hi-title { font-weight: 700; color: #58a6ff; margin-right: 0.35rem; }
-    #humanInjectStrip input[type="number"] { width: 3.5rem; }
-    #humanInjectStrip input[type="text"] { width: 14rem; font-family: ui-monospace, monospace; font-size: 0.72rem; }
-    #humanInjectStrip button { font-size: 0.72rem; padding: 0.2rem 0.45rem; cursor: pointer; }
-    #humanInjectStrip details.hi-help {
-      flex: 1 1 100%; margin-top: 0.35rem; font-size: 0.72rem; color: var(--muted);
+    .hi-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.5rem 1rem;
     }
-    #humanInjectStrip details.hi-help summary { cursor: pointer; color: var(--blue); user-select: none; }
-    #humanInjectStrip details.hi-help ol { margin: 0.35rem 0 0 1.1rem; padding: 0; line-height: 1.45; }
-    #injectFeedback { color: #8b949e; max-width: 36rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #injectFeedback.ok { color: #3fb950; }
-    #injectFeedback.err { color: #f85149; }
+    .hi-head-main { min-width: 0; flex: 1 1 12rem; }
+    .hi-title {
+      display: block;
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--accent);
+      letter-spacing: 0.02em;
+    }
+    .hi-sub {
+      display: block;
+      margin-top: 0.2rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .hi-sub code {
+      font-size: 0.68rem;
+      padding: 0.08rem 0.28rem;
+      border-radius: 4px;
+      background: #21262d;
+      border: 1px solid #30363d;
+    }
+    .hi-panels {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 0.65rem;
+      width: 100%;
+    }
+    .hi-card {
+      background: var(--panel);
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 0.55rem 0.65rem 0.65rem;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+    }
+    .hi-card-title {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      margin-bottom: 0.45rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid #30363d;
+    }
+    .hi-card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .hi-field-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 0.45rem 0.6rem;
+    }
+    .hi-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      min-width: 0;
+    }
+    .hi-field label,
+    .hi-field-inline {
+      font-size: 0.68rem;
+      font-weight: 500;
+      color: var(--muted);
+    }
+    #humanInjectStrip input[type="number"],
+    #humanInjectStrip input[type="text"] {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 0.32rem 0.45rem;
+      font-size: 0.8rem;
+      min-height: 2rem;
+    }
+    #humanInjectStrip input[type="number"]:focus,
+    #humanInjectStrip input[type="text"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+    }
+    #injectPref,
+    #injectCounterVal {
+      width: 4.5rem;
+      font-variant-numeric: tabular-nums;
+    }
+    #injectNid {
+      width: min(100%, 18rem);
+      min-width: 10rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.74rem;
+    }
+    .hi-btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+    #humanInjectStrip .hi-btn {
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 0.38rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    #humanInjectStrip .hi-btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: #388bfd;
+    }
+    #humanInjectStrip .hi-btn-primary:hover {
+      background: #4a9eff;
+      border-color: #58a6ff;
+    }
+    #humanInjectStrip .hi-btn-secondary {
+      background: #21262d;
+      color: var(--text);
+      border-color: #30363d;
+    }
+    #humanInjectStrip .hi-btn-secondary:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    #humanInjectStrip .hi-btn-ghost {
+      background: transparent;
+      color: var(--muted);
+      border-color: #30363d;
+    }
+    #humanInjectStrip .hi-btn-ghost:hover {
+      color: var(--text);
+      border-color: #484f58;
+      background: #21262d;
+    }
+    #humanInjectStrip details.hi-help {
+      width: 100%;
+      margin-top: 0.15rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    #humanInjectStrip details.hi-help summary {
+      cursor: pointer;
+      color: var(--blue);
+      user-select: none;
+      font-weight: 500;
+    }
+    #humanInjectStrip details.hi-help ol {
+      margin: 0.35rem 0 0 1.1rem;
+      padding: 0;
+      line-height: 1.45;
+    }
+    #injectFeedback {
+      flex: 1 1 14rem;
+      max-width: 100%;
+      min-height: 1.35rem;
+      padding: 0.35rem 0.5rem;
+      border-radius: 6px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.35;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #injectFeedback.ok {
+      color: #3fb950;
+      border-color: #23863655;
+      background: #23863614;
+    }
+    #injectFeedback.err {
+      color: #f85149;
+      border-color: #f8514966;
+      background: #f8514914;
+      white-space: normal;
+    }
   </style>
 </head>
 <body>
@@ -200,8 +383,57 @@
     <span id="speedNote">Pace &gt;0 slows the worker thread between chunks (good for demos). Set 0 for max speed.</span>
   </div>
   <div id="humanInjectStrip" aria-label="Human inject for cli_bridge">
-    <span class="hi-title">Human inject (person_cli)</span>
-    <span style="color:var(--muted)">SSE stream must be open (Sim: updates) · same as <code>/api/inject</code></span>
+    <div class="hi-head">
+      <div class="hi-head-main">
+        <span class="hi-title">You · person_cli</span>
+        <span class="hi-sub">Controls apply while the live stream is running — same JSON as <code>POST /api/inject</code>. Sim clock must be moving.</span>
+      </div>
+      <div id="injectFeedback" aria-live="polite"></div>
+    </div>
+    <div class="hi-panels">
+      <div class="hi-card">
+        <div class="hi-card-title">Comfort &amp; presence</div>
+        <div class="hi-card-body">
+          <div class="hi-field-row">
+            <div class="hi-field">
+              <label for="injectPref">Preferred temperature</label>
+              <div style="display:flex;align-items:center;gap:0.35rem">
+                <input type="number" id="injectPref" step="0.5" min="14" max="28" value="22" />
+                <span class="hi-field-inline">°C</span>
+              </div>
+            </div>
+            <button type="button" id="injectSetPref" class="hi-btn hi-btn-primary">Apply</button>
+          </div>
+          <div class="hi-btn-row">
+            <button type="button" id="injectLeave" class="hi-btn hi-btn-ghost">Leave home</button>
+            <button type="button" id="injectReturn" class="hi-btn hi-btn-ghost">Return home</button>
+          </div>
+        </div>
+      </div>
+      <div class="hi-card">
+        <div class="hi-card-title">Thermostat negotiation</div>
+        <div class="hi-card-body">
+          <div class="hi-field">
+            <label for="injectNid">Negotiation id</label>
+            <input type="text" id="injectNid" placeholder="UUID from feed (nid …) or Use last…" autocomplete="off" spellcheck="false" />
+          </div>
+          <button type="button" id="injectFillNid" class="hi-btn hi-btn-secondary" title="Fill from last NegotiationProposal to person_cli">Use last proposal id</button>
+          <div class="hi-field-row">
+            <div class="hi-field">
+              <label for="injectCounterVal">Counter-offer</label>
+              <div style="display:flex;align-items:center;gap:0.35rem">
+                <input type="number" id="injectCounterVal" step="0.5" min="14" max="28" value="20.5" />
+                <span class="hi-field-inline">°C</span>
+              </div>
+            </div>
+            <div class="hi-btn-row" style="align-items:flex-end">
+              <button type="button" id="injectCounter" class="hi-btn hi-btn-primary">Send counter</button>
+              <button type="button" id="injectAccept" class="hi-btn hi-btn-secondary">Accept proposal</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <details class="hi-help">
       <summary>How to use</summary>
       <ol>
@@ -213,16 +445,6 @@
         <li><strong>Human-in-the-loop:</strong> use <strong>1–2 Days</strong> and keep <strong>Pace (s)</strong> at <strong>~60</strong> so the run lasts about a minute wall-clock (inject stays open long enough to react). Set Pace to <strong>0</strong> for full-speed batch runs.</li>
       </ol>
     </details>
-    <label>°C <input type="number" id="injectPref" step="0.5" min="14" max="28" value="22" /></label>
-    <button type="button" id="injectSetPref">Set preference</button>
-    <button type="button" id="injectLeave">Leave</button>
-    <button type="button" id="injectReturn">Return</button>
-    <label>negotiation id <input type="text" id="injectNid" placeholder="shown in feed as nid …" /></label>
-    <button type="button" id="injectFillNid" title="Last proposal to person_cli">Use last proposal id</button>
-    <label>counter °C <input type="number" id="injectCounterVal" step="0.5" min="14" max="28" value="20.5" style="width:4rem" /></label>
-    <button type="button" id="injectCounter">Send counter</button>
-    <button type="button" id="injectAccept">Send accept</button>
-    <span id="injectFeedback"></span>
   </div>
   <div id="layout">
     <div id="colLeft"></div>
@@ -293,9 +515,9 @@
       agents: Object.fromEntries(AGENTS.map(a => [a.id, {
         status: 'idle', detail: '—', pulse: false,
       }])),
-      alice: { home: true, x: 180, y: 140, pref: 22 },
+      alice: { home: true, x: 168, y: 148, pref: 22 },
       bob: { home: true, x: 220, y: 140, pref: 19 },
-      cli: { home: true, x: 180, y: 140, pref: 23 },
+      cli: { home: true, x: 155, y: 152, pref: 23 },
       thermo: { setpoint: 20, device_state: 'idle', outdoorHeatingOff: false },
       dishwasher: { state: 'idle' },
       carbon: { value: null, level: '—' },
@@ -317,6 +539,15 @@
       negotiationLine: null,
       metrics: { neg: 0, convSum: 0, convN: 0, satSum: 0, satN: 0 },
       currentScenario: 'temperature_conflict',
+      /** Last scenario used to build floor SVG (rebuild on change only). */
+      _floorSvgScenario: null,
+    };
+
+    /** Living / kitchen / “left the house” porch (viewBox coords) for floor figures. */
+    const FLOOR_POS = {
+      bob: { living: [238, 148], kitchen: [302, 154], porch: [8, 168] },
+      alice: { living: [168, 148], porch: [22, 172] },
+      cli: { living: [155, 152], porch: [18, 176] },
     };
 
     function _numOrNaN(v) {
@@ -591,16 +822,41 @@
       setTimeout(() => d.classList.remove('active'), 1000);
     }
 
-    function buildFloorSvg() {
-      const w = 400, h = 280;
+    /** Stick-figure human centered at (0,0); use transform on parent <g> for position. */
+    function humanFigureSvg(color) {
       return `
-<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="0" cy="-12" r="6" fill="${color}" stroke="#fff" stroke-width="1.2"/>
+  <path d="M0 -6 V8" stroke="${color}" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M0 0 L-11 7 M0 0 L11 7" stroke="${color}" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  <path d="M-7 24 L0 8 L7 24" stroke="${color}" stroke-width="2.8" fill="none" stroke-linecap="round"/>`;
+    }
+
+    function buildFloorSvg() {
+      const w = 400;
+      const h = 280;
+      const isCli = state.currentScenario === 'cli_bridge';
+      const bedLeft = isCli ? 'CLI' : 'Alice';
+      const secondColor = isCli ? '#58a6ff' : '#f78166';
+      const secondName = isCli ? 'You' : 'Alice';
+      return `
+<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" aria-label="Floor plan">
+  <defs>
+    <linearGradient id="doorFade" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#0d1117" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#0d1117" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="105" width="28" height="110" fill="url(#doorFade)"/>
+  <g id="porchZone" opacity="0.85">
+    <rect x="4" y="118" width="12" height="86" rx="2" fill="#21262d" stroke="#484f58" stroke-width="1"/>
+    <text x="10" y="168" text-anchor="middle" fill="#8b949e" font-size="7" transform="rotate(-90 10 164)">out</text>
+  </g>
   <rect class="room" x="20" y="100" width="200" height="120" />
   <text class="room-label" x="110" y="165" text-anchor="middle">Living Room</text>
   <rect class="room" x="230" y="100" width="150" height="120" />
   <text class="room-label" x="305" y="165" text-anchor="middle">Kitchen</text>
   <rect class="room" x="20" y="20" width="90" height="70" />
-  <text class="room-label" x="65" y="58" text-anchor="middle" font-size="9">Bed Alice</text>
+  <text class="room-label" x="65" y="58" text-anchor="middle" font-size="9">Bed ${bedLeft}</text>
   <rect class="room" x="120" y="20" width="90" height="70" />
   <text class="room-label" x="165" y="52" text-anchor="middle" font-size="9">Bathroom</text>
   <rect class="room" x="220" y="20" width="90" height="70" />
@@ -612,70 +868,122 @@
   <circle id="lightLR" class="light-dot" cx="100" cy="130" r="6" fill="#484f58"/>
   <circle id="lightK" class="light-dot" cx="300" cy="130" r="6" fill="#484f58"/>
   <path id="showerIcon" d="M165 45 Q165 60 175 55 Q170 40 165 45" fill="#58a6ff" opacity="0.4" style="display:none"/>
-  <circle id="dotAlice" class="person-dot" cx="180" cy="140" r="10" fill="#f78166"/>
-  <text x="180" y="144" text-anchor="middle" fill="#fff" font-size="8">A</text>
-  <circle id="dotBob" class="person-dot" cx="220" cy="140" r="10" fill="#79c0ff"/>
-  <text x="220" y="144" text-anchor="middle" fill="#fff" font-size="8">B</text>
+  <g id="figBob" class="person-figure" transform="translate(238,148)" opacity="1">
+    ${humanFigureSvg('#79c0ff')}
+    <text x="0" y="36" text-anchor="middle" fill="#e6edf3" font-size="9" font-weight="600">Bob</text>
+  </g>
+  <g id="figAliceCli" class="person-figure" transform="translate(168,148)" opacity="1">
+    ${humanFigureSvg(secondColor)}
+    <text x="0" y="36" text-anchor="middle" fill="#e6edf3" font-size="9" font-weight="600">${secondName}</text>
+  </g>
   <line id="negLine" class="negot-line" x1="0" y1="0" x2="0" y2="0" style="display:none"/>
 </svg>`;
     }
 
-    function updateFloor() {
-      document.getElementById('floorWrap').innerHTML = buildFloorSvg();
-      const th = document.getElementById('thermoIcon');
-      const tv = document.getElementById('thermoText');
-      const sp = state.thermo.setpoint;
-      const t = (sp - 14) / (28 - 14);
-      const r = Math.round(58 + t * (248 - 58));
-      const b = Math.round(166 + t * (88 - 166));
-      const col = `rgb(${r},${Math.round((b+r)/4)},${b})`;
-      th.setAttribute('fill', col);
-      tv.textContent = String(Math.round(sp * 10) / 10);
-
-      const dw = document.getElementById('dwRect');
-      const hasDw = SCENARIO_AGENTS[state.currentScenario].includes('device_dishwasher');
-      dw.style.display = hasDw ? '' : 'none';
-      if (hasDw) {
-        if (state.dishwasher.state === 'running') { dw.setAttribute('fill', '#388bfd'); }
-        else if (state.dishwasher.state === 'scheduled') { dw.setAttribute('fill', '#d29922'); }
-        else { dw.setAttribute('fill', '#484f58'); }
-      }
-
+    function updateFloorPositions() {
       const isCliBridge = state.currentScenario === 'cli_bridge';
-      const lr = (isCliBridge ? state.cli.home : state.alice.home) || state.bob.home;
-      document.getElementById('lightLR').setAttribute('fill', lr ? '#f0e060' : '#484f58');
-      document.getElementById('lightK').setAttribute('fill', state.bob.home ? '#f0e060' : '#484f58');
+      const figBob = document.getElementById('figBob');
+      const figSecond = document.getElementById('figAliceCli');
+      if (!figBob || !figSecond) return;
 
-      const showShower = SCENARIO_AGENTS[state.currentScenario].includes('device_shower');
-      document.getElementById('showerIcon').style.display = showShower ? 'block' : 'none';
-
-      const da = document.getElementById('dotAlice');
-      const cliHome = isCliBridge ? state.cli.home : state.alice.home;
-      if (cliHome) {
-        da.setAttribute('opacity', '1');
-        const ax = isCliBridge ? state.cli.x : state.alice.x;
-        const ay = isCliBridge ? state.cli.y : state.alice.y;
-        da.setAttribute('cx', ax);
-        da.setAttribute('cy', ay);
+      const bobEvening = state.bob._minuteOfDay != null && state.bob._minuteOfDay >= 17 * 60;
+      let bx;
+      let by;
+      let bOp = 1;
+      if (!state.bob.home) {
+        bx = FLOOR_POS.bob.porch[0];
+        by = FLOOR_POS.bob.porch[1];
+        bOp = 0.4;
+      } else if (bobEvening) {
+        bx = FLOOR_POS.bob.kitchen[0];
+        by = FLOOR_POS.bob.kitchen[1];
       } else {
-        da.setAttribute('opacity', '0.25');
+        bx = FLOOR_POS.bob.living[0];
+        by = FLOOR_POS.bob.living[1];
       }
-      const db = document.getElementById('dotBob');
-      const bobEvening = (state.bob._minuteOfDay != null && state.bob._minuteOfDay >= 17 * 60);
-      db.setAttribute('cx', bobEvening ? 300 : 220);
-      db.setAttribute('cy', bobEvening ? 150 : 140);
-      db.setAttribute('opacity', state.bob.home ? '1' : '0.25');
+      figBob.setAttribute('transform', `translate(${bx},${by})`);
+      figBob.setAttribute('opacity', String(bOp));
+
+      const secondHome = isCliBridge ? state.cli.home : state.alice.home;
+      let ax;
+      let ay;
+      let aOp = secondHome ? 1 : 0.42;
+      if (secondHome) {
+        if (isCliBridge) {
+          ax = state.cli.x;
+          ay = state.cli.y;
+        } else {
+          ax = state.alice.x;
+          ay = state.alice.y;
+        }
+      } else if (isCliBridge) {
+        ax = FLOOR_POS.cli.porch[0];
+        ay = FLOOR_POS.cli.porch[1];
+      } else {
+        ax = FLOOR_POS.alice.porch[0];
+        ay = FLOOR_POS.alice.porch[1];
+      }
+      figSecond.setAttribute('transform', `translate(${ax},${ay})`);
+      figSecond.setAttribute('opacity', String(aOp));
 
       const nl = document.getElementById('negLine');
-      if (state.negotiationLine) {
+      if (nl && state.negotiationLine) {
         nl.style.display = '';
         nl.setAttribute('x1', state.negotiationLine.x1);
         nl.setAttribute('y1', state.negotiationLine.y1);
         nl.setAttribute('x2', state.negotiationLine.x2);
         nl.setAttribute('y2', state.negotiationLine.y2);
-      } else {
+      } else if (nl) {
         nl.style.display = 'none';
       }
+    }
+
+    function updateFloor() {
+      const wrap = document.getElementById('floorWrap');
+      const needRebuild = state._floorSvgScenario !== state.currentScenario;
+      if (needRebuild) {
+        wrap.innerHTML = buildFloorSvg();
+        state._floorSvgScenario = state.currentScenario;
+      }
+
+      const th = document.getElementById('thermoIcon');
+      const tv = document.getElementById('thermoText');
+      if (th && tv) {
+        const sp = state.thermo.setpoint;
+        const t = (sp - 14) / (28 - 14);
+        const r = Math.round(58 + t * (248 - 58));
+        const b = Math.round(166 + t * (88 - 166));
+        const col = `rgb(${r},${Math.round((b + r) / 4)},${b})`;
+        th.setAttribute('fill', col);
+        tv.textContent = String(Math.round(sp * 10) / 10);
+      }
+
+      const dw = document.getElementById('dwRect');
+      if (dw) {
+        const hasDw = SCENARIO_AGENTS[state.currentScenario].includes('device_dishwasher');
+        dw.style.display = hasDw ? '' : 'none';
+        if (hasDw) {
+          if (state.dishwasher.state === 'running') dw.setAttribute('fill', '#388bfd');
+          else if (state.dishwasher.state === 'scheduled') dw.setAttribute('fill', '#d29922');
+          else dw.setAttribute('fill', '#484f58');
+        }
+      }
+
+      const isCliBridge = state.currentScenario === 'cli_bridge';
+      const lrEl = document.getElementById('lightLR');
+      const kEl = document.getElementById('lightK');
+      if (lrEl && kEl) {
+        const lr = (isCliBridge ? state.cli.home : state.alice.home) || state.bob.home;
+        lrEl.setAttribute('fill', lr ? '#f0e060' : '#484f58');
+        kEl.setAttribute('fill', state.bob.home ? '#f0e060' : '#484f58');
+      }
+
+      const sh = document.getElementById('showerIcon');
+      if (sh) {
+        sh.style.display = SCENARIO_AGENTS[state.currentScenario].includes('device_shower') ? 'block' : 'none';
+      }
+
+      updateFloorPositions();
     }
 
     const feedEl = document.getElementById('feed');
@@ -948,7 +1256,7 @@
           document.getElementById('mSat').textContent = (state.metrics.satSum / state.metrics.satN).toFixed(3);
         }
         state.thermo.setpoint = data.final_value;
-        state.negotiationLine = { x1: 180, y1: 140, x2: 120, y2: 150 };
+        state.negotiationLine = { x1: 168, y1: 136, x2: 120, y2: 150 };
         setTimeout(() => { state.negotiationLine = null; updateFloor(); }, 800);
         const prefs = data.participant_preferences || {};
         const tlab = fmtTime(data.timestamp);
@@ -1071,6 +1379,7 @@
     }, 100);
 
     function resetMetrics() {
+      state._floorSvgScenario = null;
       document.getElementById('simTime').textContent = 'Sim: —:—';
       state.runSimMinuteMax = -1;
       state.metrics = { neg: 0, convSum: 0, convN: 0, satSum: 0, satN: 0 };
