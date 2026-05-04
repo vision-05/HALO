@@ -3,8 +3,10 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import time
+from pathlib import Path
 
-model_path = "face_landmarker.task"
+BASE_DIR = Path(__file__).resolve().parent
+model_path = str(BASE_DIR / "face_landmarker.task")
 
 # set up MediaPipe
 BaseOptions = python.BaseOptions
@@ -22,8 +24,8 @@ cap = cv2.VideoCapture(0)
 # set up OpenCV
 # load the standard eye detector, which is built-in
 eye_detector = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
-mouth_cascade_path = 'haarcascade_mcs_mouth.xml'
-nose_cascade_path = 'haarcascade_mcs_nose.xml'
+mouth_cascade_path = str(BASE_DIR / 'haarcascade_mcs_mouth.xml')
+nose_cascade_path = str(BASE_DIR / 'haarcascade_mcs_nose.xml')
 
 # Load the mouth and nose detectors
 mouth_detector = cv2.CascadeClassifier(mouth_cascade_path)
@@ -36,16 +38,45 @@ NOSE = 1
 MOUTH = 14
 
 
+def get_dynamic_box_size(face, frame_width, frame_height, min_size=48, max_size=200):
+    xs = [lm.x * frame_width for lm in face]
+    ys = [lm.y * frame_height for lm in face]
+
+    face_width = max(xs) - min(xs)
+    face_height = max(ys) - min(ys)
+
+    estimated_size = int(max(face_width, face_height) * 0.3)
+
+    return max(min_size, min(max_size, estimated_size))
+
+
 def safe_crop(frame, center_x, center_y, box_size=80):
     """safely crops a square from the frame."""
     h, w, _ = frame.shape
+    box_size = max(1, min(box_size, w, h))
     half = box_size // 2
 
-    # ensures square is not outside the video frame
-    y1 = max(0, center_y - half)
-    y2 = min(h, center_y + half)
-    x1 = max(0, center_x - half)
-    x2 = min(w, center_x + half)
+    # build the crop at the requested size, then shift it back inside the frame
+    # so the box does not shrink just because the face is near an edge.
+    x1 = int(center_x - half)
+    y1 = int(center_y - half)
+    x2 = x1 + box_size
+    y2 = y1 + box_size
+
+    if x1 < 0:
+        x2 -= x1
+        x1 = 0
+    if y1 < 0:
+        y2 -= y1
+        y1 = 0
+    if x2 > w:
+        shift = x2 - w
+        x1 = max(0, x1 - shift)
+        x2 = w
+    if y2 > h:
+        shift = y2 - h
+        y1 = max(0, y1 - shift)
+        y2 = h
 
     return frame[y1:y2, x1:x2], (x1, y1, x2, y2)
 
@@ -95,6 +126,7 @@ with FaceLandmarker.create_from_options(options) as landmarker:
 
         if result.face_landmarks:
             face = result.face_landmarks[0]
+            box_size = get_dynamic_box_size(face, w, h)
 
             # map the coordinates
             features = {
@@ -107,8 +139,8 @@ with FaceLandmarker.create_from_options(options) as landmarker:
             # check each feature
             for name, (cx, cy, f_type) in features.items():
 
-                # crop an 80x80 box
-                crop, (x1, y1, x2, y2) = safe_crop(frame, cx, cy, box_size=80)
+                # crop a box sized according to how close the face is to the camera
+                crop, (x1, y1, x2, y2) = safe_crop(frame, cx, cy, box_size=box_size)
 
                 # assign the correct detector
                 if f_type == "eye":
