@@ -1,0 +1,7 @@
+uvicorn
+simpy
+fastapi
+sse-starlette
+numpy
+pandas
+matplotlib

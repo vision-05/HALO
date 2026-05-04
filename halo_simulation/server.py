@@ -31,26 +31,26 @@ from sse_starlette.sse import EventSourceResponse
 
 # Ensure repo root is on path so `halo_simulation` package resolves when running
 # `python server.py` from inside this directory.
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+#_REPO_ROOT = Path(__file__).resolve().parent.parent
+#if str(_REPO_ROOT) not in sys.path:
+#    sys.path.insert(0, str(_REPO_ROOT))
 
 import pandas as pd
 
-from halo_simulation import config
-from halo_simulation.metrics.collector import (
+import config
+from metrics.collector import (
     FailureEvent,
     LearningEvent,
     MetricsCollector,
     NegotiationEvent,
 )
-from halo_simulation.negotiation import protocol
-from halo_simulation.negotiation.message import Message, MessageBus, MessageTypes
-from halo_simulation.scenarios.base_scenario import BaseScenario
-from halo_simulation.scenarios.carbon_spike import CarbonSpikeScenario
-from halo_simulation.scenarios.device_failure import DeviceFailureScenario
-from halo_simulation.scenarios.cli_bridge import CliBridgeScenario
-from halo_simulation.scenarios.temperature_conflict import TemperatureConflictScenario
+from negotiation import protocol
+from negotiation.message import Message, MessageBus, MessageTypes
+from scenarios.base_scenario import BaseScenario
+from scenarios.carbon_spike import CarbonSpikeScenario
+from scenarios.device_failure import DeviceFailureScenario
+from scenarios.cli_bridge import CliBridgeScenario
+from scenarios.temperature_conflict import TemperatureConflictScenario
 
 _UI_DIR = Path(__file__).resolve().parent / "ui"
 

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from halo_simulation import config
-from halo_simulation.agents.device_agent import ShowerDeviceAgent, ThermostatDeviceAgent
-from halo_simulation.agents.person_agent import PersonAgent
-from halo_simulation.agents.specialist_agent import GridCarbonAgent, WeatherAgent
-from halo_simulation.metrics.collector import MetricsCollector
-from halo_simulation.scenarios.base_scenario import BaseScenario
+import config
+from agents.device_agent import ShowerDeviceAgent, ThermostatDeviceAgent
+from agents.person_agent import PersonAgent
+from agents.specialist_agent import GridCarbonAgent, WeatherAgent
+from metrics.collector import MetricsCollector
+from scenarios.base_scenario import BaseScenario
 
 
 class DeviceFailureScenario(BaseScenario):

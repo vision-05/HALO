@@ -6,10 +6,10 @@ import os
 
 import pytest
 
-from halo_simulation.agents.base_agent import BaseAgent
-from halo_simulation.scenarios.carbon_spike import CarbonSpikeScenario
-from halo_simulation.scenarios.device_failure import DeviceFailureScenario
-from halo_simulation.scenarios.temperature_conflict import TemperatureConflictScenario
+from agents.base_agent import BaseAgent
+from scenarios.carbon_spike import CarbonSpikeScenario
+from scenarios.device_failure import DeviceFailureScenario
+from scenarios.temperature_conflict import TemperatureConflictScenario
 
 
 def test_temperature_conflict_runs():

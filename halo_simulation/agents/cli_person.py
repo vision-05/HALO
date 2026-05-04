@@ -8,10 +8,10 @@ from typing import Any
 import numpy as np
 import simpy
 
-from halo_simulation import config
-from halo_simulation.agents.person_agent import PersonAgent
-from halo_simulation.metrics.collector import MetricsCollector
-from halo_simulation.negotiation.message import Message, MessageTypes
+import config
+from agents.person_agent import PersonAgent
+from metrics.collector import MetricsCollector
+from negotiation.message import Message, MessageTypes
 
 logger = logging.getLogger(__name__)
 

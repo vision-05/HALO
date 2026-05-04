@@ -9,7 +9,7 @@ from typing import Sequence
 
 import numpy as np
 
-from halo_simulation import config
+import config
 
 
 def presence_multiplier(is_home: bool) -> float:

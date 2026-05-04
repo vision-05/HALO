@@ -5,14 +5,14 @@ from __future__ import annotations
 import queue
 from typing import Any
 
-from halo_simulation import config
-from halo_simulation.agents.cli_person import CliPersonAgent
-from halo_simulation.agents.device_agent import ThermostatDeviceAgent
-from halo_simulation.agents.person_agent import PersonAgent
-from halo_simulation.agents.specialist_agent import GridCarbonAgent, WeatherAgent
-from halo_simulation.human_bridge import BridgeInjector, CLI_PERSON_ID
-from halo_simulation.metrics.collector import MetricsCollector
-from halo_simulation.scenarios.base_scenario import BaseScenario
+import config
+from agents.cli_person import CliPersonAgent
+from agents.device_agent import ThermostatDeviceAgent
+from agents.person_agent import PersonAgent
+from agents.specialist_agent import GridCarbonAgent, WeatherAgent
+from human_bridge import BridgeInjector, CLI_PERSON_ID
+from metrics.collector import MetricsCollector
+from scenarios.base_scenario import BaseScenario
 
 
 class CliBridgeScenario(BaseScenario):

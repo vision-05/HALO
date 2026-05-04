@@ -8,11 +8,11 @@ from typing import Any
 import numpy as np
 import simpy
 
-from halo_simulation import config
-from halo_simulation.agents.base_agent import BaseAgent
-from halo_simulation.learning.preference_model import PreferenceModel
-from halo_simulation.metrics.collector import LearningEvent, MetricsCollector
-from halo_simulation.negotiation.message import Message, MessageTypes
+import config
+from agents.base_agent import BaseAgent
+from learning.preference_model import PreferenceModel
+from metrics.collector import LearningEvent, MetricsCollector
+from negotiation.message import Message, MessageTypes
 
 logger = logging.getLogger(__name__)
 

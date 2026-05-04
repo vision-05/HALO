@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from halo_simulation import config
-from halo_simulation.negotiation import protocol
+import config
+from negotiation import protocol
 
 
 def test_weighted_average_two_agents():

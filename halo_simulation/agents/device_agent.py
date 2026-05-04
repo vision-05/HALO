@@ -9,11 +9,11 @@ from typing import Any
 import numpy as np
 import simpy
 
-from halo_simulation import config
-from halo_simulation.agents.base_agent import BaseAgent
-from halo_simulation.metrics.collector import FailureEvent, MetricsCollector, NegotiationEvent
-from halo_simulation.negotiation import protocol
-from halo_simulation.negotiation.message import Message, MessageTypes
+import config
+from agents.base_agent import BaseAgent
+from metrics.collector import FailureEvent, MetricsCollector, NegotiationEvent
+from negotiation import protocol
+from negotiation.message import Message, MessageTypes
 
 logger = logging.getLogger(__name__)
 

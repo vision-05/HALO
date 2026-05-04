@@ -31,7 +31,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from halo_simulation import config
+import config
 
 logger = logging.getLogger(__name__)
 

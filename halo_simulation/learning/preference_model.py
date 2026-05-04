@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from halo_simulation import config
+import config
 
 
 class PreferenceModel:

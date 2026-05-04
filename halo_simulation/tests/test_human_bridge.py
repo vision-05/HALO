@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import queue
 
-from halo_simulation.human_bridge import THERMOSTAT_ID, validate_queue_item
-from halo_simulation.scenarios.cli_bridge import CliBridgeScenario
+from human_bridge import THERMOSTAT_ID, validate_queue_item
+from scenarios.cli_bridge import CliBridgeScenario
 
 
 def test_validate_queue_item() -> None:

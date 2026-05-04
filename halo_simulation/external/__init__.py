@@ -1,6 +1,6 @@
 """External live data integrations (carbon, weather)."""
 
-from halo_simulation.external.api_client import (
+from external.api_client import (
     ExternalDataClient,
     fetch_weather_hourly_chart_data,
     map_wmo_weather_code,

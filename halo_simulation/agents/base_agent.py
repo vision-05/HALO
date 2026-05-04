@@ -8,11 +8,11 @@ from typing import Any, Generator, TYPE_CHECKING, Tuple
 
 import simpy
 
-from halo_simulation.negotiation.message import Message
+from negotiation.message import Message
 
 if TYPE_CHECKING:
-    from halo_simulation.metrics.collector import MetricsCollector
-    from halo_simulation.negotiation.message import MessageBus
+    from metrics.collector import MetricsCollector
+    from negotiation.message import MessageBus
 
 logger = logging.getLogger(__name__)
 

@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from halo_simulation import config
-from halo_simulation.learning.preference_model import PreferenceModel
+import config
+from learning.preference_model import PreferenceModel
 
 
 def test_ema_updates():

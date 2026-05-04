@@ -22,9 +22,9 @@ import sys
 import threading
 import time
 
-from halo_simulation import config
-from halo_simulation.human_bridge import spawn_stdin_command_thread
-from halo_simulation.scenarios.cli_bridge import CliBridgeScenario
+import config
+from human_bridge import spawn_stdin_command_thread
+from scenarios.cli_bridge import CliBridgeScenario
 
 
 def _configure_logging(debug: bool) -> None:

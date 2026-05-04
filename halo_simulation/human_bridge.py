@@ -33,8 +33,8 @@ from typing import Any, Callable
 
 import simpy
 
-from halo_simulation.agents.cli_person import CliPersonAgent
-from halo_simulation.negotiation.message import Message, MessageTypes
+from agents.cli_person import CliPersonAgent
+from negotiation.message import Message, MessageTypes
 
 logger = logging.getLogger(__name__)
 

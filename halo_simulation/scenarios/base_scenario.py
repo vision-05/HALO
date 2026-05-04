@@ -9,9 +9,9 @@ from typing import Any
 import numpy as np
 import simpy
 
-from halo_simulation import config
-from halo_simulation.metrics.collector import MetricsCollector
-from halo_simulation.negotiation.message import MessageBus
+import config
+from metrics.collector import MetricsCollector
+from negotiation.message import MessageBus
 
 logger = logging.getLogger(__name__)
 

@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from halo_simulation.metrics.collector import MetricsCollector
+    from metrics.collector import MetricsCollector
 
-from halo_simulation import config
+import config
 
 logger = logging.getLogger(__name__)
 
