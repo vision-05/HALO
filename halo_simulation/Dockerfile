@@ -8,12 +8,12 @@ RUN apt-get update && \
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY halo_simulation/requirements.txt ./halo_simulation/requirements.txt
+RUN pip install --no-cache-dir -r halo_simulation/requirements.txt
 
 FROM builder AS test-builder
-COPY requirements-test.txt .
-RUN pip install --no-cache-dir -r requirements-test.txt
+COPY halo_simulation/requirements-test.txt ./halo_simulation/requirements-test.txt
+RUN pip install --no-cache-dir -r halo_simulation/requirements-test.txt
 
 FROM python:3.10-slim AS base
 ENV DEBIAN_FRONTEND=noninteractive
@@ -30,9 +30,12 @@ WORKDIR /app
 
 FROM base AS test
 COPY --from=test-builder /opt/venv /opt/venv
-COPY . .
-ENTRYPOINT ["pytest", "-s", "/tests/"]
+COPY halo_simulation ./halo_simulation
+ENTRYPOINT ["pytest", "-s", "/halo_simulation/tests/"]
 
 
 FROM base AS prod
-COPY . .
+COPY halo_simulation ./halo_simulation
+COPY agents/discovery/src/ ./discovery/src/
+COPY agents/watchdog/src/ ./watchdog/src/
+COPY agents/generic/src/ ./generic/src/

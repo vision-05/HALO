@@ -18,7 +18,8 @@ services:
 
   simulation:
     build:
-      context: ./halo_simulation
+      context: .
+      dockerfile: halo_simulation/Dockerfile
       target: prod
     volumes:
      - ./halo_simulation:/app
@@ -27,6 +28,21 @@ services:
     ports:
       - 8000:8000
     command: python -m uvicorn server:app --host 0.0.0.0 --port 8000
+
+  security:
+    build:
+      context: ./agents
+      dockerfile: security/Dockerfile
+      target: prod
+    network_mode: host
+    volumes:
+      - ./agents/security/src:/app/security/src
+      - ./agents/discovery/src:/app/discovery/src
+    environment:
+      - PYTHONUNBUFFERED=1
+      - AGENT_NAME=SecurityCam
+      - AGENT_ROLE=Actuator
+    command: python -m watchfiles 'python /app/security/src/suspicion_detection.py' /app
 
 
   language-test:
