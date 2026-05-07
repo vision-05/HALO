@@ -23,8 +23,6 @@ class StreamingAggregator(BaseAgent):
 
         self.desc = "Can fetch Netflix, Disney+, Spotify and Luna titles from a given name."
 
-        self.state = {"searched_shows": []}
-
     def get_search_history(self, msg: dict) -> None:
         return self.state["searched_shows"]
 

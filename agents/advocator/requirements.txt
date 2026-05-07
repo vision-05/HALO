@@ -1,0 +1,7 @@
+zmq
+zeroconf
+requests
+ddgs
+loguru
+apscheduler
+aiohttp

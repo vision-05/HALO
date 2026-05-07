@@ -35,6 +35,7 @@ class BaseAgent:
         self.outbound_socks = {}
         self.pubkey_lookup = {}
         self.state = {}
+        self.load_state()
         self.heartbeats = {}
         self.handlers = {"upsert_state": self.receive_state,
                          "get_state_keys": self.get_state_schema,
@@ -44,7 +45,6 @@ class BaseAgent:
         self.scheduler = AsyncIOScheduler()
 
         self.service = Discovery(name, role, self.port, self.public_key, new_peer_callback=self.verify_peer)
-        self.load_state()
         self.network_UUID = None
 
         logger.add(sys.stderr, format="{time} {level} {message}", filter=self.name, level="SUCCESS")
@@ -64,19 +64,20 @@ class BaseAgent:
         return {}
 
     def load_state(self) -> None:
-        if os.path.exists(f"{self.name}.json"):
-            with open(f"{self.name}.json", "r") as f:
+        if os.path.exists(f"db/{self.name}.json"):
+            with open(f"db/{self.name}.json", "r") as f:
                 self.state = json.load(f)
 
     def save_state(self) -> None:
-        with open(f"{self.name}.json", "w") as f:
+        with open(f"db/{self.name}.json", "w") as f:
             json.dump(self.state, f)
 
     def verify_peer(self, peername: str, peerdata: Dict[str, Any]) -> None:
         asyncio.create_task(self.verification_prompt(peername, peerdata))
 
     def receive_state(self, msg):
-        logger.debug(msg)
+        logger.debug(msg["params"])
+        self.state.update(msg["params"]["new_state"])
 
     def get_state_schema(self, msg):
         return list(self.state.keys())

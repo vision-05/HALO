@@ -100,7 +100,8 @@ class TelegramAgent(LanguageAgent):
                          Create a message chain with what you expect the actions to be, and inject the self prompt to occur after the relevant data is fetched. MAKE SURE TO INCLUDE WILDCARDS IN THE PROMPT.
                          Besides your own capabilities, every other agent on the network is "dumb" and should be assumed to only blindly retrieve data or complete an action. To suggest a "next_action", still use the key "on_success" as it will trigger automatically without specified failure.
                          CRITICAL: If you are continuing a chain and are about to be done, i.e. finished analysis, coming up with a plan/recommendation, send to the chat and do not self prompt.
-                         Always fetch state keys to inform state fetching. ALWAYS INCLUDE A TARGET EVEN FOR SELF PROMPTING. Results from other agents are usually in json or similar. Make sure to pretty print where possible by self prompting on result, unless data is still being passed between agents. """
+                         Always fetch state keys to inform state fetching. ALWAYS INCLUDE A TARGET EVEN FOR SELF PROMPTING. Results from other agents are usually in json or similar. Make sure to pretty print where possible by self prompting on result, unless data is still being passed between agents.
+                         Update your own state and other agent states if you come across anything useful to persist. """
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
@@ -161,7 +162,7 @@ class TelegramAgent(LanguageAgent):
             # Strip the mention out so Claude just gets the raw command
             text = text.replace(f"@{bot_username}", "").strip()
 
-        response = await self.llm.ainvoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Your state {self.state}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + text)
+        response = await self.llm.ainvoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Your state {self.state}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + text + f" from {update.message.from_user.first_name}")
         response = response.content
         if response[0] == "`":
             response = response[7:-3]

@@ -9,6 +9,7 @@ services:
     volumes:
       - ./agents/language/src:/app/language/src
       - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
     environment:
       - CLAUDE_KEY
       - TELEGRAM_KEY
@@ -23,6 +24,7 @@ services:
       target: prod
     volumes:
      - ./halo_simulation:/app
+     - ./agents/db:/app/db
     environment:
       - PYTHONPATH=.
     ports:
@@ -38,11 +40,27 @@ services:
     volumes:
       - ./agents/security/src:/app/security/src
       - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
     environment:
       - PYTHONUNBUFFERED=1
       - AGENT_NAME=SecurityCam
       - AGENT_ROLE=Actuator
     command: python -m watchfiles 'python /app/security/src/suspicion_detection.py' /app
+
+  advocator:
+    build:
+      context: ./agents
+      dockerfile: advocator/Dockerfile
+      target: prod
+    network_mode: host
+    volumes:
+      - ./agents/advocator/src:/app/advocator/src
+      - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
+    environment:
+      - PYTHONUNBUFFERED=1
+      - AGENT_NAME
+      - AGENT_ROLE=Advocator
 
 
   language-test:
@@ -101,6 +119,7 @@ services:
     volumes:
       - ./agents/generic/src:/app/generic/src
       - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
     environment:
       - PYTHONUNBUFFERED=1
       - AGENT_NAME=LivingRoomTV
@@ -116,6 +135,7 @@ services:
     volumes:
       - ./agents/generic/src:/app/generic/src
       - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
     environment:
       - PYTHONUNBUFFERED=1
       - AGENT_NAME=StreamingAggregator
@@ -131,6 +151,7 @@ services:
     volumes:
       - ./agents/generic/src:/app/generic/src
       - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
     environment:
       - PYTHONUNBUFFERED=1
       - AGENT_NAME=WEatherAggregator
@@ -146,6 +167,7 @@ services:
     volumes:
       - ./agents/generic/src:/app/src
       - ./agents/generic/test:/app/test
+      - ./agents/db:/app/db
 
   bootstrap:
     build:
@@ -165,6 +187,7 @@ services:
       - ./agents/bootstrap/src:/app/bootstrap/src
       - ./agents/bootstrap/test:/app/bootstrap/test
       - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
 
   discovery-test:
     build:
@@ -175,6 +198,7 @@ services:
     volumes:
       - ./agents/discovery/src:/app/discovery/src
       - ./agents/discovery/test:/app/discovery/test
+      - ./agents/db:/app/db
 
   discovery-verify:
     build:
@@ -184,6 +208,7 @@ services:
     container_name: halo-discovery
     volumes:
       - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
     stdin_open: true
     tty: true
 
@@ -202,6 +227,7 @@ services:
       # Optional: Hot-reload mounts for development
       - ./agents/discovery/src:/app/discovery/src
       - ./agents/watchdog/src:/app/watchdog/src
+      - ./agents/db:/app/db
 
   docs:
     build:
