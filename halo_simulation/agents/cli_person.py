@@ -115,6 +115,18 @@ class CliPersonAgent(PersonAgent):
         v = float(max(config.THERMOSTAT_MIN, min(config.THERMOSTAT_MAX, value)))
         self._state["preferred_temperature"] = v
 
+    def simulate_sleep(self) -> None:
+        """Broadcast sleep and record an evening meal for household context (CLI / inject)."""
+        m = Message.create(
+            self.agent_id,
+            "broadcast",
+            MessageTypes.SleepNotice,
+            {"name": self.name},
+            self.env.now,
+        )
+        self.broadcast(m)
+        self._record_evening_meal_if_applicable()
+
     def broadcast_preferences(self) -> None:
         self._broadcast_preferences()
 

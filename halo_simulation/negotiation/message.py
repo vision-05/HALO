@@ -33,6 +33,13 @@ class MessageTypes:
     DeviceRecoveryNotice = "DeviceRecoveryNotice"
     ActuationCommand = "ActuationCommand"
     DeviceTelemetry = "DeviceTelemetry"
+    LLMReasoningNotice = "LLMReasoningNotice"
+    # LLM-driven external observations (Part 3+)
+    CostPressureUpdate = "CostPressureUpdate"
+    ExternalDisruptionEvent = "ExternalDisruptionEvent"
+    GrocerySignalUpdate = "GrocerySignalUpdate"
+    WeatherForecastAlert = "WeatherForecastAlert"
+    LLMObservationUpdate = "LLMObservationUpdate"
 
 
 @dataclass

@@ -156,6 +156,27 @@ class ThermostatDeviceAgent(DeviceAgent):
         self._last_outdoor: float | None = None
         self._negotiation_in_progress = False
         self._last_resolved: float | None = None
+        self._cost_pressure_boost = 0.0
+        self._cost_pressure_until = 0.0
+        self._temp_ceiling_override = float(config.THERMOSTAT_MAX)
+        self._ceiling_override_until = 0.0
+        self._temp_floor_override = float(config.THERMOSTAT_MIN)
+        self._floor_override_until = 0.0
+
+    def _effective_device_weight(self) -> float:
+        boost = 0.0
+        if self.env.now < self._cost_pressure_until:
+            boost = self._cost_pressure_boost
+        return min(float(self.device_weight) + boost, 0.9)
+
+    def _clamp_setpoint(self, value: float) -> float:
+        low = float(config.THERMOSTAT_MIN)
+        high = float(config.THERMOSTAT_MAX)
+        if self.env.now < self._floor_override_until:
+            low = max(low, float(self._temp_floor_override))
+        if self.env.now < self._ceiling_override_until:
+            high = min(high, float(self._temp_ceiling_override))
+        return max(low, min(high, float(value)))
 
     def _outdoor_heating_should_off(self) -> bool:
         if self._last_outdoor is None:
@@ -211,6 +232,43 @@ class ThermostatDeviceAgent(DeviceAgent):
                 "is_home": bool(pl.get("is_home", True)),
             }
             self._maybe_start_negotiation()
+        elif msg.msg_type == MessageTypes.CostPressureUpdate:
+            sev = str(msg.payload.get("severity", "low")).lower()
+            if sev == "high":
+                self._cost_pressure_boost = 0.4
+                self._cost_pressure_until = self.env.now + 120.0
+            elif sev == "medium":
+                self._cost_pressure_boost = 0.2
+                self._cost_pressure_until = self.env.now + 60.0
+            else:
+                self._cost_pressure_boost = 0.1
+                self._cost_pressure_until = self.env.now + 30.0
+            logger.info(
+                "Thermostat: cost pressure (%s), device_weight boost %.2f",
+                sev,
+                self._cost_pressure_boost,
+            )
+        elif msg.msg_type == MessageTypes.WeatherForecastAlert:
+            pl = msg.payload or {}
+            hourly = pl.get("hourly")
+            temps: list[float] = []
+            if isinstance(hourly, dict):
+                raw = hourly.get("temperature_2m")
+                if isinstance(raw, list):
+                    temps = [float(x) for x in raw[:24] if x is not None]
+            elif isinstance(hourly, list):
+                temps = [float(x) for x in hourly[:24]]
+            if temps:
+                upcoming_max = max(temps[:6])
+                upcoming_min = min(temps[:6])
+                if upcoming_max > 30.0:
+                    self._temp_ceiling_override = 22.0
+                    self._ceiling_override_until = self.env.now + 180.0
+                    logger.info("Thermostat: heatwave forecast — ceiling 22°C")
+                elif upcoming_min < 2.0:
+                    self._temp_floor_override = 17.0
+                    self._floor_override_until = self.env.now + 180.0
+                    logger.info("Thermostat: cold snap forecast — floor 17°C")
         elif msg.msg_type in (
             MessageTypes.NegotiationAccept,
             MessageTypes.NegotiationCounter,
@@ -271,7 +329,7 @@ class ThermostatDeviceAgent(DeviceAgent):
                     current_values,
                     weights,
                     self._device_optimal,
-                    self.device_weight,
+                    self._effective_device_weight(),
                     self._last_carbon,
                 )
                 counters: dict[str, float] = {}
@@ -352,10 +410,11 @@ class ThermostatDeviceAgent(DeviceAgent):
                         current_values,
                         weights,
                         self._device_optimal,
-                        self.device_weight,
+                        self._effective_device_weight(),
                         self._last_carbon,
                     )
 
+            final_value = self._clamp_setpoint(float(final_value))
             self._comfort_setpoint = final_value
             self._last_resolved = final_value
             applied = self._applied_setpoint()

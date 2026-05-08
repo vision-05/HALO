@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
 import queue
 import re
 import sys
@@ -29,18 +31,97 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
+logger = logging.getLogger(__name__)
+
 # Ensure repo root is on path so `halo_simulation` package resolves when running
 # `python server.py` from inside this directory.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-import pandas as pd
+
+def _load_repo_dotenv() -> None:
+    """Load repo-root `.env` into `os.environ` if present (does not override existing vars)."""
+    path = _REPO_ROOT / ".env"
+    if not path.is_file():
+        return
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(path)
+    except ImportError:
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError:
+            return
+        for line in raw.splitlines():
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            if "=" not in s:
+                continue
+            key, _, val = s.partition("=")
+            key = key.strip()
+            val = val.strip()
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+                val = val[1:-1]
+            if key and key not in os.environ:
+                os.environ[key] = val
+
+
+_load_repo_dotenv()
 
 from halo_simulation import config
+
+
+def _log_llm_gateway_hint() -> None:
+    """Visible at default uvicorn log level — helps Cisco LiteLLM setup."""
+    proto = config.llm_protocol()
+    style = os.getenv("LLM_AUTH_STYLE", "x-api-key").strip() or "x-api-key"
+    if proto == "openai":
+        u = config.llm_openai_chat_url()
+        full = os.getenv("LLM_OPENAI_CHAT_URL", "").strip()
+        if u:
+            logger.warning(
+                "HALO LLM: protocol=openai (LiteLLM OpenAI compat) POST %s — model=%s (override with LLM_MODEL)",
+                u if not full else full,
+                config.llm_model(),
+            )
+        else:
+            logger.warning(
+                "HALO LLM: LLM_PROTOCOL=openai but no URL — set LITELLM_BASE_URL or LLM_OPENAI_CHAT_URL and restart.",
+            )
+        return
+
+    base = os.getenv("LLM_ANTHROPIC_BASE_URL", os.getenv("LITELLM_BASE_URL", "")).strip()
+    full = os.getenv("LLM_MESSAGES_URL", "").strip()
+    if full:
+        logger.warning("HALO LLM: LLM_MESSAGES_URL is set (full endpoint override). LLM_AUTH_STYLE=%s", style)
+    elif base:
+        logger.warning(
+            "HALO LLM: gateway base URL=%s — requests use %s/v1/messages. LLM_AUTH_STYLE=%s",
+            base,
+            base.rstrip("/"),
+            style,
+        )
+    else:
+        logger.warning(
+            "HALO LLM: LLM_ANTHROPIC_BASE_URL / LITELLM_BASE_URL not set — calls go to api.anthropic.com. "
+            "For LiteLLM Anthropic passthrough add base URL + CLAUDE_KEY + LLM_AUTH_STYLE=bearer; "
+            "for OpenAI-compatible LiteLLM use LLM_PROTOCOL=openai + LITELLM_BASE_URL + CLAUDE_KEY. "
+            "Restart uvicorn.",
+        )
+
+
+_log_llm_gateway_hint()
+
+import pandas as pd
 from halo_simulation.metrics.collector import (
     FailureEvent,
     LearningEvent,
+    LLMApiCallEvent,
+    LLMFailureEvent,
+    LLMReasoningEvent,
     MetricsCollector,
     NegotiationEvent,
 )
@@ -57,9 +138,25 @@ _UI_DIR = Path(__file__).resolve().parent / "ui"
 _NO_SHOWER_UID_IN_TELEMETRY = object()
 
 
+def sim_minutes_to_clock_str(sim_minutes: float) -> str:
+    mod = int(sim_minutes) % (24 * 60)
+    return f"{mod // 60:02d}:{mod % 60:02d}"
+
+
+LLM_DRIVEN_MSG_TYPES: frozenset[str] = frozenset(
+    {
+        MessageTypes.CostPressureUpdate,
+        MessageTypes.ExternalDisruptionEvent,
+        MessageTypes.GrocerySignalUpdate,
+        MessageTypes.WeatherForecastAlert,
+        MessageTypes.LLMObservationUpdate,
+    }
+)
+
+
 def _describe_message(msg: Message) -> str:
+    pl = msg.payload or {}
     mt = msg.msg_type
-    pl = msg.payload
     if mt == MessageTypes.PreferenceDeclaration:
         prefs = pl.get("preferences", {})
         return f"Prefers {prefs.get('temperature', '?')}°C, home={pl.get('is_home', True)}"
@@ -91,9 +188,25 @@ def _describe_message(msg: Message) -> str:
         if pct is None:
             return "Tank update" + (f" — {suf}" if suf else "")
         return ("Hot water " + str(pct) + "%") + (" — " + suf if suf else "")
+    if mt == MessageTypes.LLMReasoningNotice:
+        rel = pl.get("relevant")
+        aid = pl.get("api_id", "")
+        if rel:
+            return f"LLM reasoning · relevant {aid}"
+        return "LLM reasoning · no external fetch"
+    if mt == MessageTypes.CostPressureUpdate:
+        return f"Cost pressure ({pl.get('severity', '?')}): {pl.get('summary', '')}"
+    if mt == MessageTypes.ExternalDisruptionEvent:
+        return f"Disruption: {pl.get('summary', '')}"
+    if mt == MessageTypes.GrocerySignalUpdate:
+        return f"Grocery signal: {pl.get('summary', '')}"
+    if mt == MessageTypes.WeatherForecastAlert:
+        return f"Weather alert ({pl.get('severity', '?')}): {pl.get('summary', '')}"
+    if mt == MessageTypes.LLMObservationUpdate:
+        return pl.get("summary") or "LLM observation"
     if mt in (MessageTypes.DepartureNotice, MessageTypes.ArrivalNotice, MessageTypes.SleepNotice):
         return mt.replace("Notice", "").lower()
-    return mt
+    return str(mt)
 
 
 def message_to_public_dict(msg: Message) -> dict[str, Any]:
@@ -147,6 +260,59 @@ def learning_to_dict(e: LearningEvent) -> dict[str, Any]:
         "bayesian_mu": e.bayesian_mu,
         "bayesian_sigma": e.bayesian_sigma,
         "routine_stable": e.routine_stable,
+    }
+
+
+def llm_reasoning_to_dict(event: LLMReasoningEvent, pending_calls: list[str]) -> dict[str, Any]:
+    ts = int(event.timestamp)
+    sim_time_str = sim_minutes_to_clock_str(float(ts))
+    return {
+        "sim_time": ts,
+        "sim_time_str": sim_time_str,
+        "context_size": len(event.context_snapshot),
+        "relevant": event.relevant,
+        "api_id": event.api_id,
+        "reason": event.reason,
+        "pending_calls": list(pending_calls),
+        "llm_latency_ms": event.llm_latency_ms,
+    }
+
+
+def llm_observation_from_message(msg: Message) -> dict[str, Any]:
+    pl = msg.payload or {}
+    ts = float(msg.timestamp)
+    return {
+        "msg_type": msg.msg_type,
+        "api_id": str(pl.get("api_id", "")),
+        "summary": str(pl.get("summary", "")),
+        "severity": str(pl.get("severity", "low")),
+        "timestamp": msg.timestamp,
+        "sim_time_str": sim_minutes_to_clock_str(ts),
+        "payload": dict(pl),
+    }
+
+
+def llm_api_call_to_dict(e: LLMApiCallEvent) -> dict[str, Any]:
+    return {
+        "timestamp": e.timestamp,
+        "sim_time_str": sim_minutes_to_clock_str(e.timestamp),
+        "api_id": e.api_id,
+        "success": e.success,
+        "observation_summary": e.observation_summary,
+        "severity": e.severity,
+        "halo_message_type": e.halo_message_type,
+        "latency_ms": e.latency_ms,
+    }
+
+
+def llm_failure_to_dict(e: LLMFailureEvent) -> dict[str, Any]:
+    return {
+        "timestamp": e.timestamp,
+        "sim_time_str": sim_minutes_to_clock_str(e.timestamp),
+        "phase": e.phase,
+        "api_id": e.api_id,
+        "message": e.message,
+        "detail": e.detail,
     }
 
 
@@ -394,6 +560,18 @@ class StreamingMetricsCollector(MetricsCollector):
         super().log_learning(event)
         self._emit("learning", learning_to_dict(event))
 
+    def log_llm_reasoning(self, event: LLMReasoningEvent, pending_calls: list[str] | None = None) -> None:
+        super().log_llm_reasoning(event, pending_calls)
+        self._emit("llm_reasoning", llm_reasoning_to_dict(event, pending_calls or []))
+
+    def log_llm_api_call(self, event: LLMApiCallEvent) -> None:
+        super().log_llm_api_call(event)
+        self._emit("llm_api_call", llm_api_call_to_dict(event))
+
+    def log_llm_failure(self, event: LLMFailureEvent) -> None:
+        super().log_llm_failure(event)
+        self._emit("llm_pipeline_error", llm_failure_to_dict(event))
+
 
 class StreamingMessageBus(MessageBus):
     def __init__(
@@ -450,6 +628,8 @@ class StreamingMessageBus(MessageBus):
                     "source": pl.get("source", "synthetic"),
                 },
             )
+        if message.msg_type in LLM_DRIVEN_MSG_TYPES:
+            self._emit("llm_observation", llm_observation_from_message(message))
 
 
 def make_emit(loop: asyncio.AbstractEventLoop, q: asyncio.Queue) -> Callable[[str, dict[str, Any]], None]:
@@ -615,6 +795,31 @@ def run_simulation_thread(
                 inject_queue=inject_queue,
             )
             sc.build()
+
+            from halo_simulation.agents.llm_specialist_agent import LLMSpecialistAgent
+            from halo_simulation.external.api_registry import ApiRegistry
+            from halo_simulation.external.llm_client import LLMClient
+
+            api_registry = ApiRegistry()
+            api_key = config.anthropic_api_key()
+            if not api_key:
+                logger.warning(
+                    "No Anthropic API key — set ANTHROPIC_API_KEY or CLAUDE_KEY in the environment "
+                    "or repo-root .env (LLM reasoning uses fallback until then)",
+                )
+            llm_client = LLMClient(api_key=api_key)
+            llm_agent = LLMSpecialistAgent(
+                env=sc.env,
+                message_bus=sc.bus,
+                metrics=sc.metrics,
+                api_registry=api_registry,
+                llm_client=llm_client,
+                context_window=10,
+                reasoning_interval=60,
+                meal_context=getattr(sc, "_meal_context", None),
+            )
+            sc._agents.append(llm_agent)
+
             sc.register_all()
             sc.start_processes()
             until = float(config.MINUTES_PER_DAY * days)

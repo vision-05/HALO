@@ -35,7 +35,7 @@ Open `http://127.0.0.1:8000` in a browser. Use **single worker** (default `uvico
 2. Click **Run** so `GET /stream?scenario=cli_bridge&...` or `...&scenario=fused&...` is active.
 3. Use the **Human inject** strip (same contract as `POST /api/inject`).
 
-**Inject contract:** JSON body with an `op` field; see `halo_simulation/human_bridge.py` for allowed operations (`set_pref`, `leave`, `return`, `send_counter`, `send_accept`, `send_reject`) and fields. The server validates with `validate_queue_item()`.
+**Inject contract:** JSON body with an `op` field; see `halo_simulation/human_bridge.py` for allowed operations (`set_pref`, `leave`, `return`, `send_counter`, `send_accept`, `send_reject`, `set_favorite_meals`, `simulate_sleep`) and fields. The server validates with `validate_queue_item()`.
 
 **`person_cli` schedule:** by default **`CliPersonAgent` does not run simulated wake/sleep commute** (`manual_schedule=True`). Your presence and comfort broadcasts happen when **you** inject `set_pref` / `leave` / `return` (and negotiation replies when proposals arrive). For scripted clock-driven CLI behaviour pass `manual_schedule=False` where the agent is constructed.
 

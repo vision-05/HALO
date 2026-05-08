@@ -42,6 +42,9 @@ def _banner() -> None:
         """
 HALO human bridge — type commands (one per line):
   set-pref <deg>              — preferred °C + broadcast PreferenceDeclaration
+  set-favorite-meals <dish> [<dish> ...]   — space-separated tokens, max 5
+  set-favorite-meals a, b, c             — comma-separated (use for multi-word dishes)
+  simulate-sleep              — sleep notice + evening meal (fused meal memory)
   leave                       — away + DepartureNotice
   return                      — home + ArrivalNotice + preferences
   send-counter <deg> <nid>    — NegotiationCounter (nid from `status`)

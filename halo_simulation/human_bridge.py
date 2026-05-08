@@ -5,6 +5,13 @@ Contract for queue items (each is a ``dict``):
 - ``{"op": "set_pref", "value": <float>}`` — update ``person_cli`` preferred temperature and broadcast
   ``PreferenceDeclaration`` (sender ``person_cli``, recipient ``broadcast``).
 
+- ``{"op": "set_favorite_meals", "meals": [<str>, ...]}`` — update ``person_cli`` favorite dinner dishes
+  (2–5 strings stored; used for meal memory + LLM grocery context in ``fused``) and broadcast
+  ``PreferenceDeclaration``.
+
+- ``{"op": "simulate_sleep"}`` — broadcast ``SleepNotice`` and record evening meal when meal context is active
+  (see ``CliPersonAgent.simulate_sleep``).
+
 - ``{"op": "leave"}`` / ``{"op": "return"}`` — same presence side-effects as ``PersonAgent`` (state + notice).
   For ``CliPersonAgent`` (default **manual_schedule**) there is **no scripted** wake / leave /
   return / sleep clock — inject these (and ``set_pref``) when **you** want the human to move or
@@ -95,6 +102,16 @@ def validate_queue_item(item: dict[str, Any]) -> dict[str, Any] | None:
             }
         except (KeyError, TypeError, ValueError):
             return None
+    if op == "simulate_sleep":
+        return {"op": "simulate_sleep"}
+    if op == "set_favorite_meals":
+        raw = item.get("meals")
+        if not isinstance(raw, list):
+            return None
+        meals = [str(x).strip() for x in raw if str(x).strip()][:5]
+        if not meals:
+            return None
+        return {"op": "set_favorite_meals", "meals": meals}
     if op == "__status__":
         return {"op": "__status__"}
     return None
@@ -156,6 +173,11 @@ class BridgeInjector:
         if op == "set_pref":
             self._cli.set_preferred_temperature(float(item["value"]))
             self._cli.broadcast_preferences()
+        elif op == "set_favorite_meals":
+            self._cli.set_favorite_meals(list(item["meals"]))
+            self._cli.broadcast_preferences()
+        elif op == "simulate_sleep":
+            self._cli.simulate_sleep()
         elif op == "leave":
             self._cli.simulate_leave()
         elif op == "return":
@@ -240,6 +262,27 @@ def spawn_stdin_command_thread(
                     inbound.put({"op": "leave"})
                 elif cmd == "return":
                     inbound.put({"op": "return"})
+                elif cmd == "set-favorite-meals":
+                    raw_rest = line.strip()
+                    sp = raw_rest.find(" ")
+                    payload = raw_rest[sp + 1 :].strip() if sp >= 0 else ""
+                    if not payload:
+                        print(
+                            "set-favorite-meals: pass dishes — comma-separated for multi-word "
+                            "(e.g. fish tacos, dal) or space-separated tokens (max 5)",
+                        )
+                    elif "," in payload:
+                        meals = [x.strip() for x in payload.split(",") if x.strip()][:5]
+                        if meals:
+                            inbound.put({"op": "set_favorite_meals", "meals": meals})
+                    else:
+                        meals = [str(x).strip() for x in payload.split()[:5] if str(x).strip()]
+                        if meals:
+                            inbound.put({"op": "set_favorite_meals", "meals": meals})
+                        else:
+                            print("set-favorite-meals: need at least one dish name")
+                elif cmd in ("simulate-sleep", "sleep"):
+                    inbound.put({"op": "simulate_sleep"})
                 elif cmd == "status":
                     if status_reply is None:
                         print("status: not available")
@@ -252,8 +295,8 @@ def spawn_stdin_command_thread(
                             print("status: timeout (sim may not be running yet)")
                 else:
                     print(
-                        "Unknown command. Try: set-pref, send-counter, send-accept, send-reject, "
-                        "leave, return, status, quit"
+                        "Unknown command. Try: set-pref, set-favorite-meals, simulate-sleep, "
+                        "send-counter, send-accept, send-reject, leave, return, status, quit"
                     )
             except (IndexError, ValueError) as e:
                 print(f"Bad arguments: {e}")

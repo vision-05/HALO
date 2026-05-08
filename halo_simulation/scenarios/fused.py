@@ -8,6 +8,7 @@ from typing import Any
 
 from halo_simulation import config
 from halo_simulation.agents.cli_person import CliPersonAgent
+from halo_simulation.household_meals import HouseholdMealContext
 from halo_simulation.agents.device_agent import (
     DishwasherDeviceAgent,
     ShowerDeviceAgent,
@@ -47,6 +48,8 @@ class FusedScenario(BaseScenario):
         return self._status_reply
 
     def build(self) -> None:
+        self._meal_context = HouseholdMealContext()
+        mc = self._meal_context
         alice = PersonAgent(
             "person_alice",
             "Alice",
@@ -62,6 +65,8 @@ class FusedScenario(BaseScenario):
             },
             preferred_temperature=22.0,
             scenario_name="fused",
+            favorite_meals=["roast chicken", "vegetable curry", "fish tacos", "risotto"],
+            meal_context=mc,
         )
         bob = PersonAgent(
             "person_bob",
@@ -78,6 +83,8 @@ class FusedScenario(BaseScenario):
             },
             preferred_temperature=19.0,
             scenario_name="fused",
+            favorite_meals=["pasta bake", "burger night", "dal with rice", "fish tacos"],
+            meal_context=mc,
         )
         cli = CliPersonAgent(
             CLI_PERSON_ID,
@@ -96,6 +103,8 @@ class FusedScenario(BaseScenario):
             manual_negotiation=True,
             preferred_temperature=25.0,
             scenario_name="fused",
+            favorite_meals=["stir fry", "margherita pizza", "tomato soup"],
+            meal_context=mc,
         )
         thermo = ThermostatDeviceAgent(
             "device_thermostat",

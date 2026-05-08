@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from halo_simulation.household_meals import HouseholdMealContext
+
 import numpy as np
 import simpy
 
@@ -33,6 +35,8 @@ class PersonAgent(BaseAgent):
         preferred_lighting: float = 70.0,
         scenario_name: str = "default",
         skip_commute: bool = False,
+        favorite_meals: list[str] | None = None,
+        meal_context: HouseholdMealContext | None = None,
     ) -> None:
         super().__init__(agent_id, "person", env, message_bus, metrics)
         self.name = name
@@ -48,11 +52,23 @@ class PersonAgent(BaseAgent):
         self._state["preferred_lighting"] = preferred_lighting
         self._scenario_name = scenario_name
 
+        raw_meals = [str(x).strip() for x in (favorite_meals or []) if str(x).strip()]
+        self._favorite_meals = raw_meals[:5]
+        self._meal_context = meal_context
+        if len(self._favorite_meals) >= 1 and meal_context is not None:
+            meal_context.register_person(self.agent_id, self._favorite_meals)
+
         self.preference_model = PreferenceModel("thermostat", rng)
         self._last_declared_temp = preferred_temperature
         self._last_day_index = -1
         self._last_leave_minute = float(self._schedule_base["leave"])
         self._last_return_minute = float(self._schedule_base["return"])
+        self._return_disruption_delta_minutes = 0.0
+
+    def set_favorite_meals(self, meals: list[str]) -> None:
+        self._favorite_meals = [str(x).strip() for x in meals if str(x).strip()][:5]
+        if self._meal_context is not None and len(self._favorite_meals) >= 1:
+            self._meal_context.update_favorites(self.agent_id, self._favorite_meals)
 
     @property
     def comfort_weight(self) -> float:
@@ -65,12 +81,19 @@ class PersonAgent(BaseAgent):
     def _sample_day_minutes(self, day_start: float) -> dict[str, float]:
         noise = lambda: float(self._rng.normal(0, self.schedule_noise_std))
         base = self._schedule_base
-        return {
+        times = {
             "wake": day_start + base["wake"] + noise(),
             "leave": day_start + base["leave"] + noise(),
             "return": day_start + base["return"] + noise(),
             "sleep": day_start + base["sleep"] + noise(),
         }
+        d = self._return_disruption_delta_minutes
+        if d and not self._skip_commute:
+            times["return"] = times["return"] + d
+            cap = times["sleep"] - 60.0
+            if times["return"] > cap:
+                times["return"] = cap
+        return times
 
     def run(self):
         while True:
@@ -138,6 +161,13 @@ class PersonAgent(BaseAgent):
                 self.env.now,
             )
             self.broadcast(m)
+            self._record_evening_meal_if_applicable()
+
+    def _record_evening_meal_if_applicable(self) -> None:
+        if self._meal_context is None or len(self._favorite_meals) < 1:
+            return
+        meal = self._meal_context.pick_evening_meal(self.agent_id, self._rng)
+        self._meal_context.record_dinner(self.agent_id, self.env.now, meal)
 
     def _broadcast_preferences(self) -> None:
         payload = {
@@ -149,6 +179,8 @@ class PersonAgent(BaseAgent):
             "comfort_weight": self._state["comfort_weight"],
             "is_home": self._state["is_home"],
         }
+        if self._favorite_meals:
+            payload["favorite_meals"] = list(self._favorite_meals)
         m = Message.create(
             self.agent_id,
             "broadcast",
@@ -167,6 +199,37 @@ class PersonAgent(BaseAgent):
                 self.record_resolved_temperature(float(pl.get("final_value", self._last_declared_temp)))
         elif msg.msg_type == MessageTypes.ActuationCommand:
             pass
+        elif msg.msg_type == MessageTypes.ExternalDisruptionEvent:
+            self._handle_external_disruption(msg.payload or {})
+
+    def _handle_external_disruption(self, pl: dict[str, Any]) -> None:
+        summary = str(pl.get("summary", "")).lower()
+        severity = str(pl.get("severity", "low")).lower()
+        transport_keywords = (
+            "strike",
+            "tube",
+            "rail",
+            "train",
+            "bus",
+            "delay",
+            "disruption",
+            "transport",
+        )
+        if any(kw in summary for kw in transport_keywords):
+            delay_minutes = {"low": 15.0, "medium": 45.0, "high": 90.0}.get(severity, 30.0)
+            self._return_disruption_delta_minutes += delay_minutes
+            logger.info(
+                "%s: transport disruption — return delayed by %s sim min (total delta %s)",
+                self.name,
+                delay_minutes,
+                self._return_disruption_delta_minutes,
+            )
+            self._broadcast_preferences()
+        energy_keywords = ("power", "outage", "blackout", "energy", "electricity", "grid")
+        if any(kw in summary for kw in energy_keywords):
+            cw = float(self._state.get("comfort_weight", config.DEFAULT_COMFORT_WEIGHT))
+            self._state["comfort_weight"] = max(cw - 0.2, 0.3)
+            logger.info("%s: energy disruption — comfort_weight reduced", self.name)
 
     def _respond_negotiation(self, msg: Message) -> None:
         pl = msg.payload

@@ -54,6 +54,38 @@ class LearningEvent:
     routine_stable: bool
 
 
+@dataclass
+class LLMReasoningEvent:
+    timestamp: float
+    context_snapshot: list[dict[str, Any]]
+    relevant: bool
+    api_id: str
+    reason: str
+    llm_latency_ms: float
+
+
+@dataclass
+class LLMApiCallEvent:
+    timestamp: float
+    api_id: str
+    success: bool
+    observation_summary: str
+    severity: str
+    halo_message_type: str
+    latency_ms: float
+
+
+@dataclass
+class LLMFailureEvent:
+    """HTTP fetch, interpretation, or config failure visible to the UI stream."""
+
+    timestamp: float
+    phase: str
+    api_id: str
+    message: str
+    detail: str | None = None
+
+
 class MetricsCollector:
     """Collects events; produces CSVs and plots after a scenario run."""
 
@@ -66,6 +98,9 @@ class MetricsCollector:
         self.negotiation_events: list[NegotiationEvent] = []
         self.failure_events: list[FailureEvent] = []
         self.learning_events: list[LearningEvent] = []
+        self.llm_reasoning_events: list[LLMReasoningEvent] = []
+        self.llm_api_call_events: list[LLMApiCallEvent] = []
+        self.llm_failure_events: list[LLMFailureEvent] = []
         self._message_log: list[dict[str, Any]] = []
 
     def log_negotiation(self, event: NegotiationEvent) -> None:
@@ -76,6 +111,15 @@ class MetricsCollector:
 
     def log_learning(self, event: LearningEvent) -> None:
         self.learning_events.append(event)
+
+    def log_llm_reasoning(self, event: LLMReasoningEvent, pending_calls: list[str] | None = None) -> None:
+        self.llm_reasoning_events.append(event)
+
+    def log_llm_api_call(self, event: LLMApiCallEvent) -> None:
+        self.llm_api_call_events.append(event)
+
+    def log_llm_failure(self, event: LLMFailureEvent) -> None:
+        self.llm_failure_events.append(event)
 
     def log_message_routed(self, record: dict[str, Any]) -> None:
         self._message_log.append(record)

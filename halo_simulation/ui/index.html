@@ -607,7 +607,10 @@
       </div>
       <div class="chart-box chart-thermostat">
         <div id="chartLineEmpty" class="chart-empty-msg">No thermostat timeline yet — click <strong>Run</strong> or wait for negotiations.</div>
-        <canvas id="chartLine"></canvas>
+        <div class="chart-thermostat-inner" style="position:relative;min-height:200px;">
+          <canvas id="chartLine"></canvas>
+          <canvas id="chartLineLlmOverlay" style="position:absolute;left:0;top:0;pointer-events:none;z-index:2;"></canvas>
+        </div>
       </div>
       <div id="chartShowerWrap" class="chart-box shower-strip chart-shower">
         <div id="chartShowerEmpty" class="chart-empty-msg hidden">No shower tank samples yet — they appear during the run.</div>
@@ -626,6 +629,40 @@
           <canvas id="chartWeather"></canvas>
         </div>
         <div id="weatherChartErr" style="display:none;font-size:0.72rem;color:#f85149;margin-top:0.25rem;"></div>
+      </div>
+      <div style="border: 0.5px solid #30363d; border-radius: 8px; overflow: hidden; margin-top: 1rem;">
+        <div onclick="togglePanel('reasoning')" style="padding: 10px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--panel);">
+          <span style="font-size: 13px; font-weight: 500;">Agent reasoning</span>
+          <span id="reasoning-chevron">▾</span>
+        </div>
+        <div id="reasoning-panel" data-collapsed="0" style="padding: 0 16px; max-height: 300px; overflow-y: auto;">
+          <div id="reasoning-feed"></div>
+          <p id="reasoning-empty" style="color: var(--muted); font-size: 13px; padding: 12px 0;">
+            Waiting for first reasoning cycle (every 60 sim minutes)...
+          </p>
+        </div>
+      </div>
+      <div style="border: 0.5px solid #30363d; border-radius: 8px; overflow: hidden; margin-top: 1rem;">
+        <div onclick="togglePanel('impact')" style="padding: 10px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--panel);">
+          <span style="font-size: 13px; font-weight: 500;">Real-world impact log</span>
+          <span id="impact-chevron">▾</span>
+        </div>
+        <div id="impact-panel" data-collapsed="0" style="padding: 0 12px; max-height: 250px; overflow-y: auto;">
+          <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+            <thead>
+              <tr style="color: var(--muted); border-bottom: 0.5px solid #30363d;">
+                <th style="text-align:left; padding: 6px 4px;">Time</th>
+                <th style="text-align:left; padding: 6px 4px;">API</th>
+                <th style="text-align:left; padding: 6px 4px;">Effect</th>
+                <th style="text-align:left; padding: 6px 4px;">Sev</th>
+              </tr>
+            </thead>
+            <tbody id="impact-log-body"></tbody>
+          </table>
+          <p id="impact-empty" style="color: var(--muted); font-size: 13px; padding: 12px 0;">
+            No LLM-driven observations yet...
+          </p>
+        </div>
       </div>
     </div>
   </div>
@@ -721,6 +758,227 @@
     function toggleShowerChartEmpty(show) {
       const el = document.getElementById('chartShowerEmpty');
       if (el) el.classList.toggle('hidden', !show);
+    }
+
+    function togglePanel(which) {
+      if (which === 'reasoning') {
+      const p = document.getElementById('reasoning-panel');
+      const ch = document.getElementById('reasoning-chevron');
+      if (!p || !ch) return;
+      const collapsed = p.dataset.collapsed === '1';
+      if (collapsed) {
+        p.style.display = '';
+        p.style.maxHeight = '300px';
+        p.style.overflowY = 'auto';
+        ch.textContent = '▾';
+        p.dataset.collapsed = '0';
+      } else {
+        p.style.display = 'none';
+        ch.textContent = '▸';
+        p.dataset.collapsed = '1';
+      }
+      return;
+      }
+      if (which === 'impact') {
+        const p = document.getElementById('impact-panel');
+        const ch = document.getElementById('impact-chevron');
+        if (!p || !ch) return;
+        const collapsed = p.dataset.collapsed === '1';
+        if (collapsed) {
+          p.style.display = '';
+          p.style.maxHeight = '250px';
+          ch.textContent = '▾';
+          p.dataset.collapsed = '0';
+        } else {
+          p.style.display = 'none';
+          ch.textContent = '▸';
+          p.dataset.collapsed = '1';
+        }
+      }
+    }
+
+    function reasoningEscapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function addReasoningEntry(d) {
+      const empty = document.getElementById('reasoning-empty');
+      const panel = document.getElementById('reasoning-feed');
+      if (!panel) return;
+      if (empty) empty.style.display = 'none';
+      const entry = document.createElement('div');
+      entry.style.padding = '8px 0';
+      entry.style.borderBottom = '0.5px solid #30363d';
+      entry.style.fontSize = '13px';
+      const relevantColor = d.relevant ? '#22c55e' : '#9ca3af';
+      const apiLabel =
+        d.api_id && d.api_id !== 'none'
+          ? `<span style="background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:4px;font-size:11px;">${reasoningEscapeHtml(
+              d.api_id,
+            )}</span>`
+          : '';
+      entry.innerHTML = `
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+          <span style="color:var(--muted)">${reasoningEscapeHtml(d.sim_time_str || '')}</span>
+          <span style="width:8px;height:8px;border-radius:50%;background:${relevantColor};display:inline-block;margin-top:4px;"></span>
+        </div>
+        <div style="margin-bottom:2px;">${reasoningEscapeHtml(String(d.reason || ''))}</div>
+        <div>${apiLabel}</div>
+      `;
+      panel.insertBefore(entry, panel.firstChild);
+      while (panel.children.length > 20) panel.removeChild(panel.lastChild);
+    }
+
+    function llmSeverityMarkerColor(severity) {
+      const sev = String(severity || 'low').toLowerCase();
+      if (sev === 'high') return '#ef4444';
+      if (sev === 'medium') return '#f59e0b';
+      return '#22c55e';
+    }
+
+    function addLlmObservationCard(d) {
+      const empty = document.getElementById('reasoning-empty');
+      const panel = document.getElementById('reasoning-feed');
+      if (!panel) return;
+      if (empty) empty.style.display = 'none';
+      const sc = {
+        high: { bg: '#fef2f2', text: '#991b1b', border: '#fca5a5' },
+        medium: { bg: '#fffbeb', text: '#92400e', border: '#fcd34d' },
+        low: { bg: '#f0fdf4', text: '#166534', border: '#86efac' },
+      };
+      const sev = String(d.severity || 'low').toLowerCase();
+      const colors = sc[sev] || sc.low;
+      const entry = document.createElement('div');
+      entry.style.padding = '8px 0';
+      entry.style.borderBottom = '0.5px solid #30363d';
+      entry.style.fontSize = '13px';
+      entry.innerHTML = `
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;align-items:center;">
+          <span style="color:var(--muted)">${reasoningEscapeHtml(d.sim_time_str || '')} · <strong>Observation</strong></span>
+          <span style="font-size:11px;padding:2px 6px;border-radius:4px;background:${colors.bg};color:${colors.text};border:0.5px solid ${colors.border}">${reasoningEscapeHtml(String(d.severity || 'low'))}</span>
+        </div>
+        <div style="margin-bottom:4px;">
+          <span style="background:#21262d;color:#79c0ff;padding:2px 6px;border-radius:4px;font-size:11px;">${reasoningEscapeHtml(String(d.msg_type || ''))}</span>
+          <span style="color:var(--muted);font-size:11px;margin-left:6px;">${reasoningEscapeHtml(String(d.api_id || ''))}</span>
+        </div>
+        <div style="padding:8px;border-radius:6px;border:0.5px solid ${colors.border};background:${colors.bg};color:${colors.text};font-size:12px;line-height:1.35;">
+          ${reasoningEscapeHtml(String(d.summary || ''))}
+        </div>
+      `;
+      panel.insertBefore(entry, panel.firstChild);
+      while (panel.children.length > 35) panel.removeChild(panel.lastChild);
+    }
+
+    function addLlmApiCallRow(d) {
+      const empty = document.getElementById('reasoning-empty');
+      const panel = document.getElementById('reasoning-feed');
+      if (!panel) return;
+      if (empty) empty.style.display = 'none';
+      const ok = !!d.success;
+      const row = document.createElement('div');
+      row.style.padding = '7px 0';
+      row.style.borderBottom = '0.5px solid #30363d';
+      row.style.fontSize = '12px';
+      const haloMt = d.halo_message_type
+        ? `<div style="color:#a371f7;font-size:11px;margin-top:4px;">HALO → ${reasoningEscapeHtml(String(d.halo_message_type))}</div>`
+        : '';
+      row.innerHTML = `
+        <div style="color:var(--muted);margin-bottom:3px;">${reasoningEscapeHtml(d.sim_time_str || '')} · <strong>External API</strong></div>
+        <div>
+          <span style="font-weight:600;">${reasoningEscapeHtml(String(d.api_id || ''))}</span>
+          ${ok ? '<span style="color:#3fb950;margin-left:6px;">success</span>' : '<span style="color:#f85149;margin-left:6px;">failed</span>'}
+          ${d.latency_ms != null ? `<span style="color:var(--muted);margin-left:8px;">${reasoningEscapeHtml(String(d.latency_ms))} ms</span>` : ''}
+        </div>
+        <div style="margin-top:3px;color:#c9d1d9;">${reasoningEscapeHtml(String(d.observation_summary || ''))}</div>
+        ${haloMt}
+      `;
+      panel.insertBefore(row, panel.firstChild);
+      while (panel.children.length > 35) panel.removeChild(panel.lastChild);
+    }
+
+    function addPipelineFailureRow(d) {
+      const empty = document.getElementById('reasoning-empty');
+      const panel = document.getElementById('reasoning-feed');
+      if (!panel) return;
+      if (empty) empty.style.display = 'none';
+      const row = document.createElement('div');
+      row.style.padding = '8px 0';
+      row.style.borderBottom = '0.5px solid #f85149';
+      row.style.fontSize = '13px';
+      row.style.color = '#f85149';
+      row.innerHTML =
+        '<div style="font-weight:600;">⚠ ' +
+        reasoningEscapeHtml(String(d.phase || 'error')) +
+        '</div><div>' +
+        reasoningEscapeHtml(String(d.message || '')) +
+        '</div>';
+      panel.insertBefore(row, panel.firstChild);
+      while (panel.children.length > 25) panel.removeChild(panel.lastChild);
+    }
+
+    function addImpactLogEntry(d) {
+      const empty = document.getElementById('impact-empty');
+      const body = document.getElementById('impact-log-body');
+      if (!body) return;
+      if (empty) empty.style.display = 'none';
+      const sev = String(d.severity || 'low').toLowerCase();
+      const severityColor =
+        sev === 'high' ? '#ef4444' : sev === 'medium' ? '#f59e0b' : '#22c55e';
+      const row = document.createElement('tr');
+      row.style.borderBottom = '0.5px solid #30363d';
+      row.innerHTML =
+        '<td style="padding:5px 4px;color:var(--muted);">' +
+        reasoningEscapeHtml(String(d.sim_time_str || '')) +
+        '</td><td style="padding:5px 4px;">' +
+        reasoningEscapeHtml(String(d.api_id || '')) +
+        '</td><td style="padding:5px 4px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' +
+        reasoningEscapeHtml(String(d.summary || '')) +
+        '">' +
+        reasoningEscapeHtml(String(d.summary || '')) +
+        '</td><td style="padding:5px 4px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' +
+        severityColor +
+        ';"></span></td>';
+      body.insertBefore(row, body.firstChild);
+      while (body.children.length > 30) body.removeChild(body.lastChild);
+    }
+
+    function syncThermostatOverlaySize() {
+      const chart = document.getElementById('chartLine');
+      const overlay = document.getElementById('chartLineLlmOverlay');
+      if (!chart || !overlay) return;
+      overlay.width = chart.width;
+      overlay.height = chart.height;
+      overlay.style.width = chart.offsetWidth + 'px';
+      overlay.style.height = chart.offsetHeight + 'px';
+      redrawThermostatLlmMarkers();
+    }
+
+    function redrawThermostatLlmMarkers() {
+      const overlay = document.getElementById('chartLineLlmOverlay');
+      if (!overlay || !chartLine) return;
+      const ctx = overlay.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+      const labels = chartLine.data.labels || [];
+      llmEventMarkers.forEach((m) => {
+        const lab = fmtTime(m.timestamp);
+        const ix = labels.indexOf(lab);
+        if (ix < 0) return;
+        try {
+          const x = chartLine.scales.x.getPixelForValue(labels[ix]);
+          ctx.fillStyle = m.color || '#f59e0b';
+          ctx.beginPath();
+          ctx.moveTo(x, 4);
+          ctx.lineTo(x - 6, 18);
+          ctx.lineTo(x + 6, 18);
+          ctx.closePath();
+          ctx.fill();
+        } catch (_) {}
+      });
     }
 
     function syncThermostatChartEmptyState() {
@@ -1512,6 +1770,13 @@
         CarbonIntensityUpdate: '#79c0ff',
         DeviceFailureNotice: '#f85149',
         DeviceTelemetry: '#79c0ff',
+        CostPressureUpdate: '#fb923c',
+        ExternalDisruptionEvent: '#f472b6',
+        GrocerySignalUpdate: '#34d399',
+        WeatherForecastAlert: '#38bdf8',
+        LLMObservationUpdate: '#c084fc',
+        LLMApiCall: '#06b6d4',
+        LLMPipelineError: '#f85149',
         default: '#8b949e',
       };
       const c = colors[type] || colors.default;
@@ -1614,6 +1879,7 @@
 
     let chartLine, chartWeather, chartShower;
     let weatherSeriesRaw = null;
+    let llmEventMarkers = [];
 
     function configureNegotiationLineChartForScenario() {
       if (!chartLine) return;
@@ -1692,6 +1958,9 @@
             tooltip: haloChartTooltipDefaults(),
           },
         },
+      });
+      requestAnimationFrame(() => {
+        syncThermostatOverlaySize();
       });
       const mutedFc = weatherForecastDatasetTemplate(true);
       const ctxW = document.getElementById('chartWeather').getContext('2d');
@@ -1918,6 +2187,9 @@
         if (dss[3]) dss[3].data.push(cliV);
         chartLine.update('none');
         syncThermostatChartEmptyState();
+        requestAnimationFrame(() => {
+          syncThermostatOverlaySize();
+        });
         updateFloor();
         setAgentCard('device_thermostat', 'st-resolved', 'resolved', data.final_value.toFixed(1) + '°C comfort resolved');
       }
@@ -2077,6 +2349,61 @@
         document.getElementById('api-carbon').textContent =
           `${data.current_carbon} gCO2`;
       }
+      if (kind === 'llm_observation') {
+        addLlmObservationCard(data);
+        addImpactLogEntry(data);
+        const ts = _numOrNaN(data.timestamp);
+        if (Number.isFinite(ts)) {
+          llmEventMarkers.push({
+            timestamp: ts,
+            color: llmSeverityMarkerColor(data.severity),
+            kind: 'observation',
+          });
+          if (llmEventMarkers.length > 48) llmEventMarkers.shift();
+          redrawThermostatLlmMarkers();
+        }
+      }
+      if (kind === 'llm_api_call') {
+        addLlmApiCallRow(data);
+        const ts = _numOrNaN(data.timestamp);
+        if (Number.isFinite(ts)) {
+          llmEventMarkers.push({
+            timestamp: ts,
+            color: data.success ? '#06b6d4' : '#f85149',
+            kind: 'api',
+          });
+          if (llmEventMarkers.length > 48) llmEventMarkers.shift();
+          redrawThermostatLlmMarkers();
+        }
+        const sum = String(data.observation_summary || '').trim();
+        const short =
+          sum.length > 140 ? sum.slice(0, 137) + '…' : sum;
+        pushFeed(
+          {
+            timestamp: data.timestamp,
+            sender: 'specialist_llm',
+            recipient: 'metrics',
+            negotiation_id: null,
+          },
+          `${data.api_id || 'api'} · ${data.success ? 'ok' : 'fail'}${short ? ' · ' + short : ''}`,
+          'LLMApiCall',
+        );
+      }
+      if (kind === 'llm_pipeline_error') {
+        addPipelineFailureRow(data);
+        const detail = data.detail != null ? String(data.detail) : '';
+        const msg = String(data.message || '');
+        pushFeed(
+          {
+            timestamp: data.timestamp,
+            sender: 'specialist_llm',
+            recipient: 'operator',
+            negotiation_id: null,
+          },
+          msg + (detail ? ' · ' + detail.slice(0, 160) : ''),
+          'LLMPipelineError',
+        );
+      }
     }
 
     setInterval(() => {
@@ -2098,6 +2425,10 @@
       document.getElementById('mSat').textContent = '—';
       document.getElementById('mCarb').textContent = '—';
       feedEl.innerHTML = '';
+      const reasoningFeed = document.getElementById('reasoning-feed');
+      const reasoningEmpty = document.getElementById('reasoning-empty');
+      if (reasoningFeed) reasoningFeed.innerHTML = '';
+      if (reasoningEmpty) reasoningEmpty.style.display = '';
       state.alice.sleeping = false;
       state.bob.sleeping = false;
       state.cli.sleeping = false;
@@ -2106,6 +2437,14 @@
       chartLine.data.labels = [];
       chartLine.data.datasets.forEach(d => d.data = []);
       chartLine.update('none');
+      llmEventMarkers = [];
+      requestAnimationFrame(() => {
+        syncThermostatOverlaySize();
+      });
+      const impactBody = document.getElementById('impact-log-body');
+      const impactEmpty = document.getElementById('impact-empty');
+      if (impactBody) impactBody.innerHTML = '';
+      if (impactEmpty) impactEmpty.style.display = '';
       if (chartShower) {
         chartShower.data.labels = [];
         chartShower.data.datasets.forEach(d => { d.data = []; });
@@ -2185,6 +2524,10 @@
         const ms = Date.parse(d.sim_epoch_utc);
         if (Number.isFinite(ms)) state.simEpochUtcMs = ms;
         if (state.weatherForecastSimCache && state.weatherChartMode === 'sim') updateSimForecastWeatherChart();
+        const feed = document.getElementById('reasoning-feed');
+        const empty = document.getElementById('reasoning-empty');
+        if (feed) feed.innerHTML = '';
+        if (empty) empty.style.display = '';
       });
       evtSource.addEventListener('message', e => {
         if (e.target !== evtSource) return;
@@ -2201,6 +2544,22 @@
       evtSource.addEventListener('learning', e => {
         if (e.target !== evtSource) return;
         enqueue('learning', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('llm_reasoning', e => {
+        if (e.target !== evtSource) return;
+        addReasoningEntry(JSON.parse(e.data));
+      });
+      evtSource.addEventListener('llm_observation', e => {
+        if (e.target !== evtSource) return;
+        enqueue('llm_observation', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('llm_api_call', e => {
+        if (e.target !== evtSource) return;
+        enqueue('llm_api_call', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('llm_pipeline_error', e => {
+        if (e.target !== evtSource) return;
+        enqueue('llm_pipeline_error', JSON.parse(e.data));
       });
       evtSource.addEventListener('agent_state', e => {
         if (e.target !== evtSource) return;
@@ -2369,6 +2728,7 @@
             if (chartLine) chartLine.resize();
             if (chartWeather) chartWeather.resize();
             if (chartShower) chartShower.resize();
+            syncThermostatOverlaySize();
           } catch (_) {}
         });
       }
