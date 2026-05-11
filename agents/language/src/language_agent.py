@@ -39,6 +39,8 @@ class LanguageAgent(BaseAgent):
             instruction = msg["params"].get("prompt", None) 
         if instruction is None:
             instruction = msg["params"].get("task", None)
+        if not instruction:
+            instruction = str(msg["params"])
         logger.debug(f"======={instruction}")
         response = await self.llm.ainvoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}, the following is the instruction you gave yourself, interpret it with high priority: " + f"{instruction}. ")
         response = response.content
@@ -50,6 +52,9 @@ class LanguageAgent(BaseAgent):
 
         if not isinstance(net_commands, List):
             commands = [net_commands]
+
+        if commands[0] is None:
+            return
 
         target = commands[0].get("target", None)
         if target is not None:
@@ -101,7 +106,8 @@ class TelegramAgent(LanguageAgent):
                          Besides your own capabilities, every other agent on the network is "dumb" and should be assumed to only blindly retrieve data or complete an action. To suggest a "next_action", still use the key "on_success" as it will trigger automatically without specified failure.
                          CRITICAL: If you are continuing a chain and are about to be done, i.e. finished analysis, coming up with a plan/recommendation, send to the chat and do not self prompt.
                          Always fetch state keys to inform state fetching. ALWAYS INCLUDE A TARGET EVEN FOR SELF PROMPTING. Results from other agents are usually in json or similar. Make sure to pretty print where possible by self prompting on result, unless data is still being passed between agents.
-                         Update your own state and other agent states if you come across anything useful to persist. receive_state must be in the form with the "new_state" key first {"new_state": {"key1": "value}} Remember you have your own state that you can also modify and see. """
+                         Update your own state and other agent states if you come across anything useful to persist. receive_state must be in the form with the "new_state" key first {"new_state": {"key1": "value}} Remember you have your own state that you can also modify and see. 
+                         Update your own state and other agent states if you come across anything useful to persist. All agents on the network are not AI, and are dumb unless stated otherwise. USE THE AGENTS EXACTLY HOW THEY ARE SPECIFIED, DO NOT TRY TO GIVE UNDEFINED COMMANDS. Fetch state from agents by using the actual data keys you want. Do not ask for the key 'state_update' as it does not exist in the saved state. Use get_state_schema to find which keys you can fetch from state of an agent, you must do this chained before any data fetching. """
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
