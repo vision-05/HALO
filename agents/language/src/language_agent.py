@@ -101,7 +101,7 @@ class TelegramAgent(LanguageAgent):
                          Besides your own capabilities, every other agent on the network is "dumb" and should be assumed to only blindly retrieve data or complete an action. To suggest a "next_action", still use the key "on_success" as it will trigger automatically without specified failure.
                          CRITICAL: If you are continuing a chain and are about to be done, i.e. finished analysis, coming up with a plan/recommendation, send to the chat and do not self prompt.
                          Always fetch state keys to inform state fetching. ALWAYS INCLUDE A TARGET EVEN FOR SELF PROMPTING. Results from other agents are usually in json or similar. Make sure to pretty print where possible by self prompting on result, unless data is still being passed between agents.
-                         Update your own state and other agent states if you come across anything useful to persist. """
+                         Update your own state and other agent states if you come across anything useful to persist. receive_state must be in the form with the "new_state" key first {"new_state": {"key1": "value}} Remember you have your own state that you can also modify and see. """
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user

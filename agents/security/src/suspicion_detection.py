@@ -6,14 +6,16 @@ import time
 from pathlib import Path
 from discovery.src.base_agent import BaseAgent
 from loguru import logger
+import asyncio
+import json
 
 BASE_DIR = Path(__file__).resolve().parent
 model_path = str(BASE_DIR / "face_landmarker.task")
 
 class SuspicionDetectionAgent(BaseAgent):
-    def __init__(self, name="HALO-SuspicionDetection", role="Actuator"):
+    def __init__(self, name="SuspicionDetection", role="Aggregator"):
         super().__init__(name=name, role=role)
-        self.desc = "Monitors webcam for suspicious behavior like covering face or leaving frame. Uses MediaPipe Face Landmarker and OpenCV Haar Cascades for verification. Alerts if 2+ features are covered for 3+ seconds."
+        self.desc = "Detects solely if a suspicious person is outside and triggers message sent. Cannot provide more info. Do not query or poll the state, a message will be sent if a suspicious person is detected outside automatically. "
 
         # set up MediaPipe
         BaseOptions = python.BaseOptions
@@ -26,7 +28,7 @@ class SuspicionDetectionAgent(BaseAgent):
             running_mode=VisionRunningMode.IMAGE
         )
 
-        self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture("http://192.168.1.119:4747/video")
 
         # set up OpenCV
         # load the standard eye detector, which is built-in
@@ -109,10 +111,10 @@ class SuspicionDetectionAgent(BaseAgent):
         # if the list is greater than 0, it found the feature
         return len(detections) > 0
 
-    def run(self):
+    async def loop(self):
         suspicion_start_time = None
         REQUIRED_TIME = 3.0
-
+        msg_sent = False
         with self.FaceLandmarker.create_from_options(self.options) as landmarker:
             while self.cap.isOpened():
                 ret, frame = self.cap.read()
@@ -170,6 +172,8 @@ class SuspicionDetectionAgent(BaseAgent):
                         cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
                         cv2.putText(frame, f"{name}: {status}", (x1, y1 - 10),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, box_color, 1)
+                        
+                        logger.debug(f"{name}: {status}")
 
                     # suspect if 2 or more features are covered
                     if len(covered_features) >= 2:
@@ -196,19 +200,34 @@ class SuspicionDetectionAgent(BaseAgent):
                     # if 3 seconds have passed, trigger the master alarm
                     if elapsed_time >= REQUIRED_TIME:
                         is_suspicious = True
+                        if msg_sent != True:
+                            self.state["suspicious_person_outside"] = True
+                            await self.send_msg("Claude", json.dumps({"action": "self_prompt", "source": self.name, "target": "Claude", "params": {"prompt": "Suspicious person detected outside by security camera. Take appropriate action to keep the house safe. "}})) #hardcoded remove this
+                            msg_sent = True
                 else:
                     # if face becomes visible again, instantly reset the timer to zero
                     suspicion_start_time = None
                     is_suspicious = False
+                    self.state["suspicious_person_outside"] = False
+                    msg_sent = False
 
                 # final alert display
                 if is_suspicious:
                     cv2.putText(frame, "SUSPICIOUS", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
 
-                cv2.imshow("Cascade Verification", frame)
+                #cv2.imshow("Cascade Verification", frame)
 
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+                #if cv2.waitKey(1) & 0xFF == ord('q'):
+                #    break
+                await asyncio.sleep(0.5)
 
         self.cap.release()
         cv2.destroyAllWindows()
+
+
+async def main():
+    a = SuspicionDetectionAgent()
+    asyncio.create_task(a.loop())
+    await a.run()
+
+asyncio.run(main())

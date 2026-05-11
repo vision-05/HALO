@@ -22,10 +22,7 @@ async def start_mesh(application: Application) -> None:
     global lang_agent
     lang_agent = TelegramAgent(TELEGRAM_BOT_KEY, TELEGRAM_CHAT_ID) 
 
-    asyncio.create_task(lang_agent.broadcast_and_discover())
-    asyncio.create_task(lang_agent.heartbeat())
-    asyncio.create_task(lang_agent.prune_network())
-    asyncio.create_task(lang_agent.recv_msg())
+    asyncio.create_task(lang_agent.run())
 
     application.add_handler(CommandHandler("start", lang_agent.start))
     application.add_handler(CommandHandler("help", lang_agent.help_command))

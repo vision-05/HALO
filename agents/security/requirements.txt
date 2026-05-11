@@ -1,4 +1,6 @@
-opencv-python-headless
+opencv-python-headless==4.8.1.78
 mediapipe
 loguru
-zmq
+pyzmq
+zeroconf
+apscheduler

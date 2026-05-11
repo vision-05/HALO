@@ -76,8 +76,19 @@ class BaseAgent:
         asyncio.create_task(self.verification_prompt(peername, peerdata))
 
     def receive_state(self, msg):
-        logger.debug(msg["params"])
-        self.state.update(msg["params"]["new_state"])
+        params = msg.get("params", {})
+        logger.debug(f"{params}")
+        
+        new_state = params.get("new_state")
+        
+        if new_state is None:
+            logger.warning(f"[{self.name}] Claude forgot the 'new_state' wrapper! Salvaging raw params.")
+            new_state = params
+            
+        if isinstance(new_state, dict):
+            self.state.update(new_state)
+        else:
+            logger.error(f"[{self.name}] Dropped state update: Payload is not a dictionary -> {new_state}")
 
     def get_state_schema(self, msg):
         return list(self.state.keys())
