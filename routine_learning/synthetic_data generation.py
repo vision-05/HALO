@@ -10,7 +10,6 @@ START_DATE = datetime(2025, 1, 1)
 END_DATE = datetime(2025, 6, 30)
 
 
-
 def get_season(month):
     if month in [12, 1, 2]:
         return "Winter"
@@ -20,6 +19,31 @@ def get_season(month):
         return "Summer"
     else:
         return "Autumn"
+
+
+def get_rainfall_probability(season):
+    """Seasonal rainfall probabilities."""
+    probs = {
+        "Winter": 0.40,
+        "Spring": 0.35,
+        "Summer": 0.15,
+        "Autumn": 0.45,
+    }
+    return probs.get(season, 0.25)
+
+
+def generate_weather(season):
+    """Generate weather with rain intensity."""
+    rain_prob = get_rainfall_probability(season)
+    is_raining = random.random() < rain_prob
+    rain_intensity = 0.0
+    
+    if is_raining:
+        rain_intensity = random.choice(["light", "moderate", "heavy"])
+        intensity_map = {"light": 0.3, "moderate": 0.6, "heavy": 0.9}
+        rain_intensity = intensity_map[rain_intensity]
+    
+    return {"is_raining": is_raining, "rain_intensity": rain_intensity}
 
 
 def generate_temperature(season):
@@ -49,9 +73,19 @@ def confidence():
     return round(random.uniform(0.90, 0.99), 2)
 
 
-# Adds realistic noise to time
-def add_time_noise(base_hour, base_minute=0, variance_minutes=20):
+# Adds realistic noise to time, influenced by fatigue carryover
+def add_time_noise(base_hour, base_minute=0, variance_minutes=20, fatigue_minutes=0):
+    """Add temporal noise with fatigue dependency.
+    
+    fatigue_minutes: carryover from previous day's late activities.
+    Positive values delay wake-up times; negative values (recovery) slightly reduce delay.
+    """
     noise = random.randint(-variance_minutes, variance_minutes)
+    
+    # Fatigue makes the person sleep longer on wake-up
+    if base_hour < 12 and fatigue_minutes > 0:
+        noise += int(fatigue_minutes * random.uniform(0.3, 0.6))
+    
     dt = datetime(2026, 1, 1, base_hour, base_minute) + timedelta(minutes=noise)
     return dt.strftime("%H:%M")
 
@@ -64,11 +98,14 @@ def should_skip(probability=0.10):
 
 def create_event(date, time_str, event_type, location, heating, tv_status,
                  dog_walk=False, grocery=False,
-                 dance=False, movie_night=False):
+                 dance=False, movie_night=False, weather=None):
 
     timestamp = f"{date.strftime('%Y-%m-%d')} {time_str}"
     season = get_season(date.month)
     outside_temp = generate_temperature(season)
+    
+    if weather is None:
+        weather = {"is_raining": False, "rain_intensity": 0.0}
 
     return {
         "timestamp": timestamp,
@@ -76,6 +113,8 @@ def create_event(date, time_str, event_type, location, heating, tv_status,
         "is_weekend": int(date.weekday() >= 5),
         "season": season,
         "weather_temp": outside_temp,
+        "is_raining": weather["is_raining"],
+        "rain_intensity": weather["rain_intensity"],
         "location_status": location,
         "event_type": event_type,
         "heating_temp": heating,
@@ -91,25 +130,36 @@ def create_event(date, time_str, event_type, location, heating, tv_status,
 def generate_dataset():
     all_events = []
     current_date = START_DATE
+    fatigue_carryover = 0  # Track sleep debt across days
+    previous_day_late_event = False  # Track if previous day had late activity
 
     while current_date <= END_DATE:
         day_name = current_date.strftime("%A")
         season = get_season(current_date.month)
         temp = generate_temperature(season)
         heating = heating_preference(season, temp)
-
-
+        
+        # Generate daily weather
+        daily_weather = generate_weather(season)
+        
+        # Decay fatigue carryover (recovery effect) and apply late-event penalty
+        if previous_day_late_event:
+            fatigue_carryover = min(60, fatigue_carryover + random.randint(30, 60))
+        else:
+            fatigue_carryover = max(0, fatigue_carryover - random.randint(10, 20))
 
         if day_name in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]:
 
-            # Wake up
+            # Wake up (influenced by fatigue)
+            wake_time = add_time_noise(7, 0, fatigue_minutes=fatigue_carryover)
             all_events.append(create_event(
                 current_date,
-                add_time_noise(7, 0),
+                wake_time,
                 "WakeUp",
                 "Home",
                 heating,
-                "Off"
+                "Off",
+                weather=daily_weather
             ))
 
             # Leave home for uni
@@ -119,7 +169,8 @@ def generate_dataset():
                 "LeaveHome",
                 "Away",
                 heating,
-                "Off"
+                "Off",
+                weather=daily_weather
             ))
 
             # Return home
@@ -129,10 +180,12 @@ def generate_dataset():
                 "ReturnHome",
                 "Home",
                 heating,
-                "Off"
+                "Off",
+                weather=daily_weather
             ))
 
             # Friday family movie night
+            late_movie_night = False
             if day_name == "Friday" and not should_skip(0.05):
                 all_events.append(create_event(
                     current_date,
@@ -141,7 +194,8 @@ def generate_dataset():
                     "Home",
                     heating,
                     "On",
-                    movie_night=True
+                    movie_night=True,
+                    weather=daily_weather
                 ))
 
                 all_events.append(create_event(
@@ -151,23 +205,30 @@ def generate_dataset():
                     "Home",
                     heating,
                     "Off",
-                    movie_night=True
+                    movie_night=True,
+                    weather=daily_weather
                 ))
-
+                late_movie_night = True
+            
+            previous_day_late_event = late_movie_night
 
         elif day_name == "Saturday":
 
+            # Saturday wake-up is later but influenced by Friday fatigue
+            wake_hour = 10 if fatigue_carryover < 30 else (11 if fatigue_carryover < 60 else 12)
             all_events.append(create_event(
                 current_date,
-                add_time_noise(10, 0, 30),
+                add_time_noise(wake_hour, 0, 30, fatigue_minutes=fatigue_carryover),
                 "WakeUp",
                 "Home",
                 heating,
-                "Off"
+                "Off",
+                weather=daily_weather
             ))
 
-            # Morning dog walk
-            if not should_skip():
+            # Morning dog walk: skip if heavy rain
+            rain_penalty = 0.30 if daily_weather["rain_intensity"] >= 0.6 else 0.10
+            if not should_skip(rain_penalty):
                 all_events.append(create_event(
                     current_date,
                     add_time_noise(10, 20, 20),
@@ -175,11 +236,12 @@ def generate_dataset():
                     "Away",
                     heating,
                     "Off",
-                    dog_walk=True
+                    dog_walk=True,
+                    weather=daily_weather
                 ))
 
-            # Evening dog walk
-            if not should_skip():
+            # Evening dog walk: skip if heavy rain
+            if not should_skip(rain_penalty):
                 all_events.append(create_event(
                     current_date,
                     add_time_noise(18, 0, 20),
@@ -187,23 +249,28 @@ def generate_dataset():
                     "Away",
                     heating,
                     "Off",
-                    dog_walk=True
+                    dog_walk=True,
+                    weather=daily_weather
                 ))
-
+            
+            previous_day_late_event = False
 
         elif day_name == "Sunday":
 
+            # Sunday wake-up is early, but fatigue can shift it
             all_events.append(create_event(
                 current_date,
-                add_time_noise(7, 0, 15),
+                add_time_noise(7, 0, 15, fatigue_minutes=fatigue_carryover),
                 "WakeUp",
                 "Home",
                 heating,
-                "Off"
+                "Off",
+                weather=daily_weather
             ))
 
-            # Dance class
-            if not should_skip(0.03):
+            # Dance class: skip if heavy rain or high fatigue
+            dance_skip_prob = 0.03 + (0.20 if daily_weather["rain_intensity"] >= 0.6 else 0.0)
+            if not should_skip(dance_skip_prob):
                 all_events.append(create_event(
                     current_date,
                     add_time_noise(8, 0, 10),
@@ -211,11 +278,13 @@ def generate_dataset():
                     "Away",
                     heating,
                     "Off",
-                    dance=True
+                    dance=True,
+                    weather=daily_weather
                 ))
 
-            # Dog walk after dance
-            if not should_skip():
+            # Dog walk after dance: skip if heavy rain
+            rain_penalty = 0.30 if daily_weather["rain_intensity"] >= 0.6 else 0.10
+            if not should_skip(rain_penalty):
                 all_events.append(create_event(
                     current_date,
                     add_time_noise(10, 30, 20),
@@ -223,23 +292,29 @@ def generate_dataset():
                     "Away",
                     heating,
                     "Off",
-                    dog_walk=True
+                    dog_walk=True,
+                    weather=daily_weather
                 ))
 
-            # Grocery shopping
-            if not should_skip(0.08):
+            # Grocery shopping: delay or skip if heavy rain
+            grocery_skip_prob = 0.08 + (0.25 if daily_weather["rain_intensity"] >= 0.6 else 0.0)
+            if not should_skip(grocery_skip_prob):
+                # Delay grocery trip if moderate rain
+                hours_offset = random.randint(0, 2) if daily_weather["rain_intensity"] < 0.6 else random.randint(1, 3)
+                shopping_hour = 16 + hours_offset
                 all_events.append(create_event(
                     current_date,
-                    add_time_noise(16, 0, 40),
+                    add_time_noise(shopping_hour, 0, 40),
                     "GroceryShopping",
                     "Away",
                     heating,
                     "Off",
-                    grocery=True
+                    grocery=True,
+                    weather=daily_weather
                 ))
 
-            # Evening dog walk
-            if not should_skip():
+            # Evening dog walk: skip if heavy rain
+            if not should_skip(rain_penalty):
                 all_events.append(create_event(
                     current_date,
                     add_time_noise(18, 0, 20),
@@ -247,13 +322,15 @@ def generate_dataset():
                     "Away",
                     heating,
                     "Off",
-                    dog_walk=True
+                    dog_walk=True,
+                    weather=daily_weather
                 ))
+            
+            previous_day_late_event = False
 
         current_date += timedelta(days=1)
 
     return pd.DataFrame(all_events)
-
 
 
 if __name__ == "__main__":
