@@ -154,7 +154,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH, help="Path to the trained PPO model.")
     parser.add_argument("--episodes", type=int, default=100, help="Number of episodes to evaluate.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
-    parser.add_argument("--output", type=Optional[Path], default=None, help="Optional: save results to JSON file.")
+    parser.add_argument("--output", type=str, default=None, help="Optional: save results to JSON file.")
     return parser.parse_args()
 
 
@@ -189,9 +189,10 @@ def main() -> int:
             "random_baseline": random_results,
             "improvement": ppo_results["mean_reward"] - random_results["mean_reward"],
         }
-        with Path(args.output).open("w", encoding="utf-8") as f:
+        output_path = Path(args.output)
+        with output_path.open("w", encoding="utf-8") as f:
             json.dump(combined_results, f, indent=2)
-        print(f"Results saved to: {args.output}")
+        print(f"Results saved to: {output_path}")
 
     return 0
 

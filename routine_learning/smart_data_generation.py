@@ -4,7 +4,7 @@ import argparse
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -87,7 +87,8 @@ def build_kde_profile(hours: np.ndarray, grid_points: int = 144) -> dict[str, An
     density = np.exp(-0.5 * (diff / bandwidth_hours) ** 2).sum(axis=1)
     density /= augmented.size * bandwidth_hours * np.sqrt(2.0 * np.pi)
 
-    area = float(np.trapz(density, grid))
+    dx = float(grid[1] - grid[0]) if grid.size > 1 else 1.0
+    area = float(np.sum(density) * dx)
     if area > 0.0:
         density = density / area
 
@@ -107,9 +108,9 @@ def build_kde_profile(hours: np.ndarray, grid_points: int = 144) -> dict[str, An
 def _select_hours(
     df: pd.DataFrame,
     event_type: str,
-    day_names: tuple[str, ...] | None = None,
-    hour_min: float | None = None,
-    hour_max: float | None = None,
+    day_names: Optional[tuple[str, ...]] = None,
+    hour_min: Optional[float] = None,
+    hour_max: Optional[float] = None,
 ) -> np.ndarray:
     mask = df["event_type"].eq(event_type)
     if day_names is not None:
@@ -130,7 +131,7 @@ def _mode_value(series: pd.Series, default: Any = None) -> Any:
     return modes.iloc[0]
 
 
-def _mode_numeric(series: pd.Series, default: float | None = None) -> float | None:
+def _mode_numeric(series: pd.Series, default: Optional[float] = None) -> Optional[float]:
     if series.empty:
         return default
     return float(_mode_value(series, default=default))
@@ -140,9 +141,9 @@ def _build_time_section(
     df: pd.DataFrame,
     event_type: str,
     label: str,
-    day_names: tuple[str, ...] | None = None,
-    hour_min: float | None = None,
-    hour_max: float | None = None,
+    day_names: Optional[tuple[str, ...]] = None,
+    hour_min: Optional[float] = None,
+    hour_max: Optional[float] = None,
 ) -> dict[str, Any]:
     hours = _select_hours(df, event_type, day_names=day_names, hour_min=hour_min, hour_max=hour_max)
     profile = build_kde_profile(hours)
@@ -253,12 +254,10 @@ def _time_shift_rule(
 def _heating_preferences(df: pd.DataFrame) -> dict[str, str]:
     heating_map: dict[str, str] = {}
     for season in ["Winter", "Spring", "Summer", "Autumn"]:
-        season_df = df.loc[df["season"].eq(season)]
-        if season == "Summer":
+        # Exclude "Off" values from the mode calculation.
+        season_df = df.loc[df["season"].eq(season) & df["heating_temp"].ne("Off")]
+        if season == "Summer" or season_df.empty:
             heating_map[season] = "Off"
-            continue
-        if season_df.empty:
-            heating_map[season] = "21"
             continue
         preferred = _mode_value(season_df["heating_temp"], default=21)
         heating_map[season] = str(int(round(float(preferred)))) if preferred is not None else "21"
@@ -267,9 +266,9 @@ def _heating_preferences(df: pd.DataFrame) -> dict[str, str]:
 
 def build_user_routine_profile(df: pd.DataFrame) -> dict[str, Any]:
     """Build a richer routine profile from the synthetic data."""
-    wake_weekday = _build_time_section(df, "WakeUp", "weekday", day_names=WEEKDAY_NAMES)
-    wake_saturday = _build_time_section(df, "WakeUp", "saturday", day_names=("Saturday",))
-    wake_sunday = _build_time_section(df, "WakeUp", "sunday", day_names=("Sunday",))
+    wake_weekday = _build_time_section(df, "WakeUp", "weekday_wake", day_names=WEEKDAY_NAMES)
+    wake_saturday = _build_time_section(df, "WakeUp", "saturday_wake", day_names=("Saturday",))
+    wake_sunday = _build_time_section(df, "WakeUp", "sunday_wake", day_names=("Sunday",))
 
     leave_section = _build_time_section(df, "LeaveHome", "leave_home", day_names=WEEKDAY_NAMES)
     return_section = _build_time_section(df, "ReturnHome", "return_home", day_names=WEEKDAY_NAMES)

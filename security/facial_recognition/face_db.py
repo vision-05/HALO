@@ -13,6 +13,7 @@ from config import ENCODINGS_PATH, KNOWN_FACES_DIR, SUPPORTED_EXTENSIONS
 
 
 def _iter_person_images(known_faces_dir: Path) -> List[Tuple[str, Path]]:
+    """Iterate through the known_faces directory to find valid images."""
     image_paths: List[Tuple[str, Path]] = []
     if not known_faces_dir.exists():
         return image_paths
@@ -56,16 +57,19 @@ def _ensure_dlib_compatible(image: np.ndarray) -> np.ndarray:
     if image.shape[2] != 3:
         raise ValueError(f"expected RGB image, got shape: {image.shape}")
 
+    # Enforce C-contiguous memory layout for dlib C++ bindings
     return np.require(image, dtype=np.uint8, requirements=["C", "W", "O"])
 
 
 def _load_image_rgb(image_path: Path) -> np.ndarray:
-    """Load image robustly as RGB using Pillow, then OpenCV fallback."""
+    """Load image robustly as RGB using Pillow, dropping alpha/gray channels."""
     try:
         with Image.open(image_path) as img:
+            # Force conversion to 3-channel RGB to prevent alpha-channel crashes
             image_array = np.array(img.convert("RGB"), dtype=np.uint8, copy=True)
         return _ensure_dlib_compatible(image_array)
     except Exception:
+        # Fallback to OpenCV if Pillow fails
         bgr_image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
         if bgr_image is None:
             raise ValueError(f"failed to decode image: {image_path}")
@@ -74,6 +78,7 @@ def _load_image_rgb(image_path: Path) -> np.ndarray:
 
 
 def _largest_face(face_locations: List[Tuple[int, int, int, int]]) -> Tuple[int, int, int, int]:
+    """Select the largest bounding box from detected faces."""
     return max(
         face_locations,
         key=lambda box: (box[2] - box[0]) * (box[1] - box[3]),
@@ -81,9 +86,10 @@ def _largest_face(face_locations: List[Tuple[int, int, int, int]]) -> Tuple[int,
 
 
 def build_face_database(
-    known_faces_dir: Path = KNOWN_FACES_DIR,
-    output_path: Path = ENCODINGS_PATH,
+        known_faces_dir: Path = KNOWN_FACES_DIR,
+        output_path: Path = ENCODINGS_PATH,
 ) -> Dict[str, List[np.ndarray]]:
+    """Scan the directory, detect faces, encode them, and save to a pickle file."""
     names: List[str] = []
     encodings: List[np.ndarray] = []
 
@@ -100,6 +106,7 @@ def build_face_database(
             continue
 
         selected_location = [_largest_face(face_locations)]
+
         try:
             face_enc = face_recognition.face_encodings(image, known_face_locations=selected_location)
         except RuntimeError as error:
@@ -114,7 +121,11 @@ def build_face_database(
         encodings.append(face_enc[0])
 
     database = {"names": names, "encodings": encodings}
+
+    # Ensure the parent directory for the output path exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Safely dump the database
     with output_path.open("wb") as file:
         pickle.dump(database, file)
 
@@ -122,6 +133,7 @@ def build_face_database(
 
 
 def load_face_database(path: Path = ENCODINGS_PATH) -> Dict[str, List[np.ndarray]]:
+    """Load the pre-computed face encodings from disk."""
     if not path.exists():
         raise FileNotFoundError(
             f"Encoding file not found: {path}. Run encode_faces.py first."
@@ -134,4 +146,3 @@ def load_face_database(path: Path = ENCODINGS_PATH) -> Dict[str, List[np.ndarray
         raise ValueError("Invalid encoding database format.")
 
     return database
-

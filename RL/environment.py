@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Union
 
 import gymnasium as gym
 import numpy as np
@@ -94,8 +94,10 @@ def _integrate_density_window(profile: dict[str, Any], start_hour: float, window
         return float(densities[0] * window_hours) if densities.size else 0.0
 
     dx = window_hours / float(sample_count - 1)
-    area = float(np.sum((densities[:-1] + densities[1:]) * 0.5) * dx)
-    return max(0.0, area)
+    area = 0.0
+    for left, right in zip(densities[:-1], densities[1:]):
+        area += float((left + right) * 0.5 * dx)
+    return max(0.0, float(area))
 
 
 def _hour_distance(a: float, b: float) -> float:
@@ -108,7 +110,7 @@ class SmartHomeEnv(gym.Env):
 
     metadata = {"render_modes": []}
 
-    def __init__(self, json_path: str | Path, step_minutes: int = 15) -> None:
+    def __init__(self, json_path: Union[str, Path], step_minutes: int = 15) -> None:
         super().__init__()
         self.json_path = Path(json_path)
         self.step_minutes = max(5, int(step_minutes))
@@ -401,7 +403,7 @@ class SmartHomeEnv(gym.Env):
         return self._get_obs()
 
 
-def load_profile(json_path: str | Path) -> dict[str, Any]:
+def load_profile(json_path: Union[str, Path]) -> dict[str, Any]:
     with Path(json_path).open("r", encoding="utf-8") as file:
         return json.load(file)
 
