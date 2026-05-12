@@ -239,6 +239,21 @@ services:
     command: serve -a 0.0.0.0:8000
     volumes:
       - ./:/docs
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: halo-ollama
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
   
   dozzle:
     image: amir20/dozzle:latest

@@ -202,7 +202,7 @@ class SuspicionDetectionAgent(BaseAgent):
                         is_suspicious = True
                         if msg_sent != True:
                             self.state["suspicious_person_outside"] = True
-                            await self.send_msg("Claude", json.dumps({"action": "self_prompt", "source": self.name, "target": "Claude", "params": {"prompt": "Suspicious person detected outside by security camera. Take appropriate action to keep the house safe. "}})) #hardcoded remove this
+                            await self.send_msg("LLM", json.dumps({"action": "self_prompt", "source": self.name, "target": "Claude", "params": {"prompt": "Suspicious person detected outside by security camera. Take appropriate action to keep the house safe. "}})) #hardcoded remove this
                             msg_sent = True
                 else:
                     # if face becomes visible again, instantly reset the timer to zero

@@ -10,3 +10,4 @@ zeroconf
 loguru
 apscheduler
 aiohttp
+ollama

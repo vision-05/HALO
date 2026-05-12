@@ -16,19 +16,14 @@ import re
 import os
 from loguru import logger
 import aiohttp
+from ollama import AsyncClient
 CLAUDE_API_KEY = os.environ['CLAUDE_KEY']
 
 class LanguageAgent(BaseAgent):
     def __init__(self, name, role):
         super().__init__(name, role)
 
-        self.llm = ChatOpenAI(
-            model='bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0',
-            temperature=0.7,
-            max_tokens=1024,
-            api_key=CLAUDE_API_KEY,
-            base_url='https://litellm.prod.outshift.ai/'
-        )
+        self.llm = AsyncClient(host='http://127.0.0.1:11434')
 
         self.sys_prompt = ""
 
@@ -42,8 +37,20 @@ class LanguageAgent(BaseAgent):
         if not instruction:
             instruction = str(msg["params"])
         logger.debug(f"======={instruction}")
-        response = await self.llm.ainvoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}, the following is the instruction you gave yourself, interpret it with high priority: " + f"{instruction}. ")
-        response = response.content
+        response = await self.llm.chat(
+            model='qwen2.5',
+            format='json',
+            messages=[
+                {
+                    'role': 'system',
+                    'content': self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}, the following is the instruction you gave yourself, interpret it with high priority: "
+                },
+                {
+                    'role': 'user',
+                    'content': instruction
+                }
+            ])
+        response = response["message"]["content"]
         if response[0] == "`":
             response = response[7:-3]
         human_resp = json.loads(response)
@@ -64,7 +71,7 @@ class LanguageAgent(BaseAgent):
 
 class TelegramAgent(LanguageAgent):
     def __init__(self, telegram_token: str, admin_chat_id: str) -> None:
-        super().__init__("Claude", "Language")
+        super().__init__("LLM", "Language")
         self.telegram_token = telegram_token
         self.admin_chat_id = admin_chat_id
 
@@ -168,8 +175,20 @@ class TelegramAgent(LanguageAgent):
             # Strip the mention out so Claude just gets the raw command
             text = text.replace(f"@{bot_username}", "").strip()
 
-        response = await self.llm.ainvoke(self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Your state {self.state}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}" + text + f" from {update.message.from_user.first_name}")
-        response = response.content
+        response = await self.llm.chat(
+            model='qwen2.5',
+            format='json',
+            messages=[
+                {
+                    'role': 'system',
+                    'content': self.sys_prompt + f"Your name: {self.name}, Your capabilities: {list(self.handlers.keys())}, Current connected agents: {self.get_peer_info()}, current available actions for connected devices {self.schemas}, the following is the instruction you gave yourself, interpret it with high priority: "
+                },
+                {
+                    'role': 'user',
+                    'content': text
+                }
+            ])
+        response = response["message"]["content"]
         if response[0] == "`":
             response = response[7:-3]
         human_resp = json.loads(response)
