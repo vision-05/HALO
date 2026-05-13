@@ -31,6 +31,11 @@ class BaseScenario(ABC):
         self.bus = MessageBus(self.env, metrics=metrics)
         self._agents: list[Any] = []
 
+    @property
+    def agents(self) -> tuple[Any, ...]:
+        """Registered scenario agents (read-only). Used by RL drivers and tooling."""
+        return tuple(self._agents)
+
     def register_all(self) -> None:
         for a in self._agents:
             if getattr(a, "register_on_bus", True):

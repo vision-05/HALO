@@ -492,6 +492,27 @@ class ThermostatDeviceAgent(DeviceAgent):
         finally:
             self._negotiation_in_progress = False
 
+    def apply_rl_comfort_delta(self, delta_celsius: float) -> dict[str, Any]:
+        """Shift negotiated comfort setpoint for RL training (Option 2 hook).
+
+        Skips while a negotiation is running so we do not fight the protocol loop.
+        """
+        if self._negotiation_in_progress:
+            return {
+                "applied": False,
+                "reason": "negotiation_in_progress",
+                "comfort_setpoint": float(self._comfort_setpoint),
+            }
+        if self._state.get("device_state") in ("failed", "maintenance_required"):
+            return {"applied": False, "reason": "device_down", "comfort_setpoint": float(self._comfort_setpoint)}
+        self._comfort_setpoint = self._clamp_setpoint(float(self._comfort_setpoint) + float(delta_celsius))
+        self._apply_outdoor_heating_rule()
+        return {
+            "applied": True,
+            "comfort_setpoint": float(self._comfort_setpoint),
+            "target_temp": float(self._state.get("target_temp", self._comfort_setpoint)),
+        }
+
     def run(self):
         while True:
             deadline = self.env.now + 1.0

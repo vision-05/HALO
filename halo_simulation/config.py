@@ -77,7 +77,7 @@ WEATHER_BASELINE_TEMP = 12.0
 WEATHER_SUMMER_OFFSET = 8.0
 WEATHER_WINTER_OFFSET = -5.0
 # When outdoor temperature is at or above this (°C), thermostat applies minimum setpoint (heating off).
-OUTDOOR_HEATING_OFF_CELSIUS = 19.0
+OUTDOOR_HEATING_OFF_CELSIUS = 23.0
 
 # Specialist broadcast intervals (simulated minutes)
 CARBON_BROADCAST_INTERVAL = 30
