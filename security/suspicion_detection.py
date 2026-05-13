@@ -45,7 +45,7 @@ def get_dynamic_box_size(face, frame_width, frame_height, min_size=48, max_size=
     face_width = max(xs) - min(xs)
     face_height = max(ys) - min(ys)
 
-    estimated_size = int(max(face_width, face_height) * 0.3)
+    estimated_size = int(max(face_width, face_height) * 0.4)
 
     return max(min_size, min(max_size, estimated_size))
 

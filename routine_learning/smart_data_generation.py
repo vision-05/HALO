@@ -17,8 +17,8 @@ WEEKEND_NAMES = ("Saturday", "Sunday")
 ALL_DAY_NAMES = WEEKDAY_NAMES + WEEKEND_NAMES
 
 
-def load_dataset(csv_path: Path) -> pd.DataFrame:
-    """Load the synthetic routine dataset and normalize timestamp fields."""
+def load_dataset(csv_path: Path, window_days: Optional[int] = None) -> pd.DataFrame:
+    """Load routine data, normalize timestamps, and optionally keep only a rolling window."""
     if not csv_path.exists():
         raise FileNotFoundError(f"Synthetic dataset not found: {csv_path}")
 
@@ -36,8 +36,25 @@ def load_dataset(csv_path: Path) -> pd.DataFrame:
         + df["timestamp"].dt.minute / 60.0
         + df["timestamp"].dt.second / 3600.0
     )
+    df = df.sort_values(["timestamp", "event_type"]).reset_index(drop=True)
+
+    if window_days is not None:
+        if window_days <= 0:
+            raise ValueError("window_days must be a positive integer.")
+        latest_ts = df["timestamp"].max()
+        window_start = latest_ts - pd.Timedelta(days=window_days)
+        df = df.loc[df["timestamp"] >= window_start].copy()
+
     df["date_only"] = df["timestamp"].dt.date
-    return df.sort_values(["timestamp", "event_type"]).reset_index(drop=True)
+    return df.reset_index(drop=True)
+
+
+def truncate_csv_to_window(csv_path: Path, window_days: int) -> pd.DataFrame:
+    """Physically truncate the CSV to the last N days and return the truncated frame."""
+    df = load_dataset(csv_path, window_days=window_days)
+    df_to_save = df.drop(columns=["hour_float", "date_only"], errors="ignore")
+    df_to_save.to_csv(csv_path, index=False)
+    return df
 
 
 def _cyclic_distance(a: np.ndarray, b: float) -> np.ndarray:
@@ -342,6 +359,7 @@ def build_user_routine_profile(df: pd.DataFrame) -> dict[str, Any]:
             "date_end": df["timestamp"].max().date().isoformat() if not df.empty else None,
             "kde_grid_points": 144,
             "transition_states": build_markov_transition_matrix(df)["states"],
+            "rolling_window_days": None,
         },
     }
 
@@ -370,17 +388,34 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_OUTPUT_JSON,
         help="Path to write the user_routine_profile.json file.",
     )
+    parser.add_argument(
+        "--window-days",
+        type=int,
+        default=30,
+        help="Rolling window size in days used for profile generation (default: 30).",
+    )
+    parser.add_argument(
+        "--truncate-input",
+        action="store_true",
+        help="If set, overwrite input CSV with only the rolling window rows.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    df = load_dataset(args.input)
+    if args.truncate_input:
+        df = truncate_csv_to_window(args.input, window_days=args.window_days)
+    else:
+        df = load_dataset(args.input, window_days=args.window_days)
     profile = build_user_routine_profile(df)
+    profile["profile_metadata"]["rolling_window_days"] = int(args.window_days)
     save_profile(profile, args.output)
 
     print("Profile generated successfully.")
     print(f"Input rows: {df.shape[0]}")
+    print(f"Rolling window days: {args.window_days}")
+    print(f"Unique days retained: {df['date_only'].nunique()}")
     print(f"Output file: {args.output}")
     print(f"Weekday wake-up KDE peak: {profile['wake_up_patterns']['weekday_kde_peak_hour']}")
     print(f"Dog walk rain shift rule: {profile['weather_correlation']['DogWalk']['rule_summary']}")

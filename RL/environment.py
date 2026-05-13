@@ -137,6 +137,9 @@ class SmartHomeEnv(gym.Env):
         self.leave_hour = 8.0
         self._episode_steps = 0
         self._max_steps = int((24.0 - 6.0) / self.step_hours)
+        
+        # Track the last time each action was taken (initialize to -24 to allow immediate first actions)
+        self.last_action_times = {i: -24.0 for i in range(len(ACTIONS))}
 
         self._initialize_profile_targets()
 
@@ -231,6 +234,7 @@ class SmartHomeEnv(gym.Env):
         season_map = {"Winter": 0.0, "Spring": 1.0, "Summer": 2.0, "Autumn": 3.0}
         return float(season_map.get(self.season, 0.0)) / 3.0
 
+
     def _profile_mass(self, profile: dict[str, Any], start_hour: float, window_hours: float) -> float:
         return float(_integrate_density_window(profile, start_hour, window_hours))
 
@@ -262,66 +266,83 @@ class SmartHomeEnv(gym.Env):
         return np.clip(obs, -1.0, 1.0)
 
     def _reward_reduce_heating_when_out(self) -> float:
+        # Check if we already did this recently (e.g., 6-hour cooldown for heating)
+        time_since_last = self.current_time_hours - self.last_action_times[0]
+        if time_since_last < 6.0:
+            return -3.0  # Penalty for repeated heating adjustments
+
         return_mass = self._profile_mass(self.return_profile, self.current_time_hours, 1.0)
         if self.current_time_hours >= self.return_hour:
-            return -4.0
+            return -5.0
         if return_mass < 0.10:
-            return 5.0
+            return 2.0
         if return_mass > 0.60:
-            return -3.0
-        return 2.0 * (1.0 - return_mass) - 1.0
+            return -5.0
+        return 1.0 * (1.0 - return_mass) - 0.5
 
     def _reward_preheat_before_return_home(self) -> float:
         return_mass = self._profile_mass(self.return_profile, self.current_time_hours, 1.0)
         if return_mass > 0.60:
-            return 10.0
+            return 15.0  # increased from 10.0
         if return_mass < 0.10:
-            return -5.0
-        return 20.0 * return_mass - 5.0
+            return -8.0  # increased penalty from -5.0
+        return 25.0 * return_mass - 8.0  # increased slope from 20.0
 
     def _reward_preheat_house_to_preferred_temperature(self) -> float:
+        # Cooldown: Only preheat once every 8 hours
+        if (self.current_time_hours - self.last_action_times[2]) < 8.0:
+            return -4.0
+
+        # Only allow preheating within 1.5 hours of returning home
+        hours_until_return = self.return_hour - self.current_time_hours
+        
+        if hours_until_return < 0 or hours_until_return > 1.5:
+            return -5.0  # Too early or too late!
+
         season_bonus = {"Winter": 8.0, "Spring": 3.0, "Autumn": 4.0, "Summer": -4.0}
-        reward = season_bonus.get(self.season, 0.0)
-        if self.current_time_hours < self.return_hour:
-            reward += 1.5
-        return reward
+        return season_bonus.get(self.season, 0.0) + (5.0 - hours_until_return)
 
     def _reward_recommend_movie_selection(self) -> float:
         movie_mass = self._profile_mass(self.movie_profile, self.current_time_hours, 2.0)
         if self.day_name != "Friday":
-            return -2.0 + 8.0 * movie_mass
-        return 10.0 * movie_mass - 1.5
+            return -3.0 + 12.0 * movie_mass  # increased from -2.0 + 8.0
+        return 15.0 * movie_mass - 2.0  # increased from 10.0
 
     def _reward_set_movie_settings(self) -> float:
         movie_mass = self._profile_mass(self.movie_profile, self.current_time_hours, 1.0)
         if movie_mass > 0.50:
-            return 12.0 * movie_mass
-        return 8.0 * movie_mass - 2.0
+            return 16.0 * movie_mass  # increased from 12.0
+        return 12.0 * movie_mass - 3.0  # increased from 8.0
 
     def _reward_suggest_walking_time(self) -> float:
         walk_mass = self._profile_mass(self.walk_profile, self.current_time_hours, 2.0)
         if self.rain_intensity > 0.6:
-            return -4.0
-        return 8.0 * walk_mass - 1.0
+            return -5.0  # increased penalty from -4.0
+        return 10.0 * walk_mass - 1.0  # increased from 8.0
 
     def _reward_suggest_alternative_walking_time(self) -> float:
         if self.rain_intensity <= 0.6:
-            return -4.0
+            return -5.0  # increased penalty from -4.0
         rainy_target = (self.walk_hour + self.dog_walk_weather_shift_hours) % 24.0
         distance = _hour_distance(self.current_time_hours, rainy_target)
         if distance <= 0.5:
-            return 20.0
+            return 30.0  # increased from 20.0
         if distance <= 1.5:
-            return 12.0 - 5.0 * distance
-        return -2.0
+            return 20.0 - 8.0 * distance  # increased from 12.0 - 5.0
+        return -3.0  # increased penalty from -2.0
 
     def _reward_shopping_list_prompt(self) -> float:
         shopping_mass = self._profile_mass(self.shopping_profile, self.current_time_hours, 2.0)
         if self.low_stock_count == 0:
-            return -3.0
-        return 6.0 * shopping_mass + float(self.low_stock_count)
+            return -4.0  # increased penalty
+        return 4.0 * shopping_mass + float(self.low_stock_count)  # reduced from 6.0
 
     def _reward_check_fridge_and_suggest_shopping_list(self) -> float:
+        # Check if we already did this recently (e.g., 4-hour cooldown)
+        time_since_last = self.current_time_hours - self.last_action_times[8]
+        if time_since_last < 4.0:
+            return -4.0  # Massive penalty for spamming
+
         shopping_mass = self._profile_mass(self.shopping_profile, self.current_time_hours, 2.0)
         if self.low_stock_count < 2:
             return -4.0
@@ -335,9 +356,9 @@ class SmartHomeEnv(gym.Env):
             self._profile_mass(self.shopping_profile, self.current_time_hours, 1.0),
         ]
         strongest_signal = max(signals)
-        if strongest_signal < 0.10:
-            return 2.5
-        return -4.0 * strongest_signal
+        if strongest_signal < 0.25:
+            return 5.0
+        return -2.0 * strongest_signal
 
     def _calculate_reward(self, action: int) -> float:
         if action < 0 or action >= len(ACTIONS):
@@ -360,6 +381,10 @@ class SmartHomeEnv(gym.Env):
     def step(self, action: int):
         action_name = self.action_name(action)
         reward = self._calculate_reward(action)
+        
+        # Record the time this action was taken
+        self.last_action_times[action] = self.current_time_hours
+        
         info = {
             "action": action,
             "action_name": action_name,
@@ -371,6 +396,7 @@ class SmartHomeEnv(gym.Env):
             "current_time_hours": self.current_time_hours,
             "reward": reward,
         }
+
 
         self.current_time_hours += self.step_hours
         self._episode_steps += 1
