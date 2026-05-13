@@ -48,3 +48,21 @@ This uses **`HaloTemperatureRlEnv`** (3 thermostat nudges, 9-dim observation). I
 **Alternative:** in **`RL/PPO.py`**, change **`make_env()`** to return **`HaloTemperatureRlEnv()`** instead of **`SmartHomeEnv(profile_path)`**, then run `python RL/PPO.py train ...` as before.
 
 The legacy **`RL/environment.py`** profile MDP remains available for comparison.
+
+## 6. Live simulation stream (UI + SimPy sidecar)
+
+If **`HALO_RL_THERMOSTAT_MODEL`** is set when you start the FastAPI server, each streamed run attaches a SimPy sidecar that loads a **Stable-Baselines3 PPO** checkpoint and periodically nudges **`device_thermostat`** (same 9-float observation and **`ACTION_DELTAS`** as training). The UI receives SSE events **`rl_thermostat`** and updates the thermostat chart and feed.
+
+- **`HALO_RL_THERMOSTAT_MODEL`** — path to the saved model. If the file ends in **`.zip`**, pass that path; loading uses the path **without** the `.zip` suffix (SB3 convention).
+- **`HALO_RL_THERMOSTAT_STEP_MIN`** — optional; default **`15`** (sim minutes between sidecar steps).
+
+Example:
+
+```bash
+export PYTHONPATH=.
+export HALO_RL_THERMOSTAT_MODEL=./my_halo_ppo.zip
+# optional: export HALO_RL_THERMOSTAT_STEP_MIN=15
+uvicorn halo_simulation.server:app --host 127.0.0.1 --port 8000
+```
+
+Then open the UI, pick a scenario that includes **`device_thermostat`**, and click **Run**. The policy was trained on **`TemperatureConflictScenario`** (`HaloTemperatureRlEnv`); other scenarios still run, but observation statistics may differ from training.

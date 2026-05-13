@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 import numpy as np
 
 from halo_simulation import config
 from halo_simulation.agents.device_agent import ThermostatDeviceAgent
+from halo_simulation.rl.observation import build_temperature_rl_observation
 from halo_simulation.scenarios.temperature_conflict import TemperatureConflictScenario
 
 # Discrete RL actions: nudge comfort setpoint (°C) before next SimPy slice.
@@ -40,49 +40,8 @@ class TemperatureRlDriver:
         return self.observe()
 
     def observe(self) -> np.ndarray:
-        th = self._thermostat()
-        s = float(self.scenario.env.now)
-        mod = s % float(config.MINUTES_PER_DAY)
-        ang = 2.0 * math.pi * mod / float(config.MINUTES_PER_DAY)
-        tsin, tcos = math.sin(ang), math.cos(ang)
-        cur = float(th._state.get("current_temp", 18.0))
-        tgt = float(th._state.get("target_temp", 20.0))
-        if th._last_outdoor is not None:
-            out = float(th._last_outdoor)
-        else:
-            out = float(config.WEATHER_BASELINE_TEMP + config.WEATHER_WINTER_OFFSET)
-        carb = float(th._last_carbon)
-        neg = 1.0 if th._negotiation_in_progress else 0.0
-
-        lo = float(config.THERMOSTAT_MIN)
-        hi = float(config.THERMOSTAT_MAX)
-
-        def norm_temp(t: float) -> float:
-            return float(np.clip((t - lo) / (hi - lo) * 2.0 - 1.0, -1.0, 1.0))
-
-        alice_h, bob_h = 0.0, 0.0
-        for agent in self.scenario.agents:
-            aid = getattr(agent, "agent_id", "")
-            if aid == "person_alice":
-                alice_h = 1.0 if getattr(agent, "is_home", True) else -1.0
-            elif aid == "person_bob":
-                bob_h = 1.0 if getattr(agent, "is_home", True) else -1.0
-
-        obs = np.array(
-            [
-                float(tsin),
-                float(tcos),
-                float(norm_temp(cur)),
-                float(norm_temp(tgt)),
-                float(norm_temp(out)),
-                float(np.clip(carb / 400.0, 0.0, 1.0) * 2.0 - 1.0),
-                float(neg * 2.0 - 1.0),
-                float(alice_h),
-                float(bob_h),
-            ],
-            dtype=np.float32,
-        )
-        return obs
+        assert self.scenario is not None
+        return build_temperature_rl_observation(self.scenario)
 
     def _reward(self, th: ThermostatDeviceAgent) -> float:
         cur = float(th._state.get("current_temp", 18.0))

@@ -1777,6 +1777,7 @@
         LLMObservationUpdate: '#c084fc',
         LLMApiCall: '#06b6d4',
         LLMPipelineError: '#f85149',
+        RLThermostatNudge: '#ff79c6',
         default: '#8b949e',
       };
       const c = colors[type] || colors.default;
@@ -2148,6 +2149,61 @@
         pushFeed(data, data.description, data.msg_type);
         pulseAgent(data.sender);
         if (data.recipient !== 'broadcast') pulseAgent(data.recipient);
+      }
+      if (kind === 'rl_thermostat') {
+        const ap = data.apply || {};
+        const cs = ap.comfort_setpoint;
+        if (typeof cs === 'number' && Number.isFinite(cs)) {
+          state.thermo.setpoint = cs;
+        }
+        const tRaw = _numOrNaN(data.timestamp != null ? data.timestamp : data.sim_time);
+        if (Number.isFinite(tRaw) && tRaw >= state.runSimMinuteMax) {
+          state.runSimMinuteMax = tRaw;
+          document.getElementById('simTime').textContent = 'Sim: ' + weatherSimAxisLabel(tRaw);
+          state.bob._minuteOfDay = tRaw % MIN_PER_DAY;
+        }
+        const tlab = fmtTime(data.timestamp != null ? data.timestamp : data.sim_time);
+        if (chartLine && typeof cs === 'number' && Number.isFinite(cs)) {
+          chartLine.data.labels.push(tlab);
+          chartLine.data.datasets[0].data.push(cs);
+          const dss = chartLine.data.datasets;
+          const prevLen = dss[0].data.length - 1;
+          const aliceV =
+            dss[1] && prevLen > 0 ? dss[1].data[prevLen - 1] : state.alice.pref;
+          const bobV = dss[2] && prevLen > 0 ? dss[2].data[prevLen - 1] : state.bob.pref;
+          const cliV = dss[3] && prevLen > 0 ? dss[3].data[prevLen - 1] : state.cli.pref;
+          if (dss[1]) dss[1].data.push(aliceV);
+          if (dss[2]) dss[2].data.push(bobV);
+          if (dss[3]) dss[3].data.push(cliV);
+          chartLine.update('none');
+          syncThermostatChartEmptyState();
+          requestAnimationFrame(() => {
+            syncThermostatOverlaySize();
+          });
+        }
+        const dStr =
+          typeof data.delta_c === 'number' && Number.isFinite(data.delta_c)
+            ? (data.delta_c >= 0 ? '+' : '') + data.delta_c.toFixed(1) + '°C'
+            : '—';
+        const csStr =
+          typeof cs === 'number' && Number.isFinite(cs) ? cs.toFixed(1) + '°C comfort' : 'comfort —';
+        const appliedStr = ap.applied === false ? ` (not applied: ${ap.reason || 'unknown'})` : '';
+        pushFeed(
+          {
+            timestamp: data.timestamp != null ? data.timestamp : data.sim_time,
+            sender: 'RL policy',
+            recipient: 'device_thermostat',
+            negotiation_id: null,
+          },
+          `${dStr} → ${csStr}${appliedStr}`,
+          'RLThermostatNudge',
+        );
+        setAgentCard(
+          'device_thermostat',
+          ap.applied === false ? 'st-idle' : 'st-resolved',
+          ap.applied === false ? 'idle' : 'RL nudge',
+          thermostatDetailLine(),
+        );
       }
       if (kind === 'negotiation') {
         state.metrics.neg++;
@@ -2536,6 +2592,10 @@
       evtSource.addEventListener('negotiation', e => {
         if (e.target !== evtSource) return;
         enqueue('negotiation', JSON.parse(e.data));
+      });
+      evtSource.addEventListener('rl_thermostat', e => {
+        if (e.target !== evtSource) return;
+        enqueue('rl_thermostat', JSON.parse(e.data));
       });
       evtSource.addEventListener('failure', e => {
         if (e.target !== evtSource) return;

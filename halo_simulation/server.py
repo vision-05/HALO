@@ -822,6 +822,17 @@ def run_simulation_thread(
 
             sc.register_all()
             sc.start_processes()
+            rl_model = os.environ.get("HALO_RL_THERMOSTAT_MODEL", "").strip()
+            if rl_model:
+                try:
+                    from halo_simulation.rl.live_inference import attach_rl_thermostat_sidecar
+
+                    attach_rl_thermostat_sidecar(sc, emit, rl_model)
+                except Exception:
+                    logger.exception(
+                        "HALO_RL_THERMOSTAT_MODEL is set (%r) but RL thermostat sidecar failed to start",
+                        rl_model,
+                    )
             until = float(config.MINUTES_PER_DAY * days)
             chunk = float(config.STREAM_STOP_CHECK_CHUNK_MINUTES)
             stopped_early = False
