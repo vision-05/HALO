@@ -85,7 +85,7 @@ To generate the **User Routine Profile** and fine-tune the RL agent, the simulat
 
 ### Data Example
 ```csv
-timestamp,day_of_week,season,rain_intensity,location_status,event_type,heating_temp,low_stock_count
-2025-01-01 07:05:00,Wednesday,Winter,0.0,Home,WakeUp,22,1
-2025-01-01 08:45:00,Wednesday,Winter,0.0,Away,LeaveHome,22,1
+timestamp,day_of_week,is_weekend,season,weather_temp,is_raining,rain_intensity,location_status,event_type,heating_temp,tv_status,dog_walk,grocery_trip,dance_class,family_movie_night,confidence_score
+2025-01-01 06:54,Wednesday,0,Winter,1.1,False,0.0,Home,WakeUp,21,Off,False,False,False,False,0.91
+2025-01-01 08:44,Wednesday,0,Winter,0.7,False,0.0,Away,LeaveHome,21,Off,False,False,False,False,0.94
 ```
