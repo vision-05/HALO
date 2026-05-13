@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from halo_simulation.rl.driver import ACTION_DELTAS, TemperatureRlDriver
+from halo_simulation.rl.live_inference import _sb3_load_path
 from halo_simulation.rl.observation import build_temperature_rl_observation
 
 
@@ -43,3 +44,18 @@ def test_observe_matches_build_temperature_rl_observation():
     o1 = d.observe()
     o2 = build_temperature_rl_observation(d.scenario)
     np.testing.assert_array_almost_equal(o1, o2, decimal=6)
+
+
+def test_sb3_load_path_prefers_zip_when_stem_is_directory(tmp_path):
+    """SB3 stem path must not be a directory (common if checkpoint was extracted next to .zip)."""
+    stem_dir = tmp_path / "mymodel"
+    stem_dir.mkdir()
+    zip_path = tmp_path / "mymodel.zip"
+    zip_path.write_bytes(b"dummy")
+    assert _sb3_load_path(str(zip_path)) == str(zip_path.resolve())
+
+
+def test_sb3_load_path_uses_stem_when_no_directory(tmp_path):
+    zip_path = tmp_path / "solo.zip"
+    zip_path.write_bytes(b"x")
+    assert _sb3_load_path(str(zip_path)) == str(zip_path.with_suffix(""))

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Callable
+
+import numpy as np
 
 from halo_simulation import config
 from halo_simulation.rl.driver import ACTION_DELTAS
@@ -15,9 +18,18 @@ logger = logging.getLogger(__name__)
 
 
 def _sb3_load_path(model_path: str) -> str:
-    p = Path(model_path).expanduser()
-    if p.suffix.lower() == ".zip":
-        return str(p.with_suffix(""))
+    """Path passed to ``PPO.load``.
+
+    SB3 convention is to call ``PPO.load("foo")`` for a file ``foo.zip``. If both ``foo`` and
+    ``foo.zip`` exist (e.g. an extracted checkpoint folder), ``foo`` is a directory and loading
+    fails with ``IsADirectoryError`` — in that case pass the explicit ``.zip`` path.
+    """
+    p = Path(model_path).expanduser().resolve()
+    if p.suffix.lower() == ".zip" and p.is_file():
+        stem = p.with_suffix("")
+        if stem.exists() and stem.is_dir():
+            return str(p)
+        return str(stem)
     return str(p)
 
 
@@ -35,11 +47,26 @@ def attach_rl_thermostat_sidecar(
     )
     horizon = float(config.MINUTES_PER_DAY * scenario.days)
     load_path = _sb3_load_path(model_path)
+    stochastic = os.getenv("HALO_RL_THERMOSTAT_STOCHASTIC", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     try:
         from stable_baselines3 import PPO
     except ImportError as e:  # pragma: no cover
-        raise RuntimeError("Install stable-baselines3 for RL live inference (pip install -r halo_simulation/rl/requirements-rl.txt)") from e
+        exe = sys.executable
+        logger.error(
+            "stable_baselines3 missing for the Python running this process (%s). "
+            "Install into that exact environment, then restart uvicorn.",
+            exe,
+        )
+        raise RuntimeError(
+            f"stable_baselines3 not installed for Python {exe!r}. "
+            f"Run: {exe} -m pip install -r halo_simulation/rl/requirements-rl.txt "
+            "(same interpreter as `python -m uvicorn …`)."
+        ) from e
 
     model = PPO.load(load_path)
     logger.info("RL thermostat sidecar: loaded PPO from %s", load_path)
@@ -67,8 +94,8 @@ def attach_rl_thermostat_sidecar(
                 yield env.timeout(rem)
                 continue
 
-            action, _states = model.predict(obs, deterministic=True)
-            ai = int(action)
+            action, _states = model.predict(obs, deterministic=not stochastic)
+            ai = int(np.asarray(action, dtype=np.int64).reshape(-1)[0])
             ai = max(0, min(ai, len(ACTION_DELTAS) - 1))
             delta = ACTION_DELTAS[ai]
             info = thermo.apply_rl_comfort_delta(delta)

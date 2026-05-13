@@ -53,8 +53,9 @@ The legacy **`RL/environment.py`** profile MDP remains available for comparison.
 
 If **`HALO_RL_THERMOSTAT_MODEL`** is set when you start the FastAPI server, each streamed run attaches a SimPy sidecar that loads a **Stable-Baselines3 PPO** checkpoint and periodically nudges **`device_thermostat`** (same 9-float observation and **`ACTION_DELTAS`** as training). The UI receives SSE events **`rl_thermostat`** and updates the thermostat chart and feed.
 
-- **`HALO_RL_THERMOSTAT_MODEL`** — path to the saved model. If the file ends in **`.zip`**, pass that path; loading uses the path **without** the `.zip` suffix (SB3 convention).
+- **`HALO_RL_THERMOSTAT_MODEL`** — path to the saved model. If the path ends in **`.zip`**, we normally load via SB3’s stem-without-`.zip` convention; **if a folder with that same stem already exists** (e.g. extracted `my_halo_ppo/` next to `my_halo_ppo.zip`), we load the **`.zip` file** explicitly so loading does not hit `IsADirectoryError`.
 - **`HALO_RL_THERMOSTAT_STEP_MIN`** — optional; default **`15`** (sim minutes between sidecar steps).
+- **`HALO_RL_THERMOSTAT_STOCHASTIC`** — if set to **`1`**, **`true`**, or **`yes`**, the sidecar calls ``predict(..., deterministic=False)`` so actions vary (default is deterministic). Use this if a checkpoint always picks the same nudge (e.g. always **+0.5°C**): that usually means the policy **collapsed during training**, not a simulation wiring bug. Retrain with more timesteps (and the trainer now uses a small **entropy bonus** by default) or evaluate the policy on ``TemperatureRlDriver`` before trusting it in **fused** live runs.
 
 Example:
 

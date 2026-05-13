@@ -52,6 +52,25 @@ def _http_error_detail(response: httpx.Response | None) -> str | None:
     return _anthropic_error_message(response) or _openai_style_error_message(response)
 
 
+def _parse_json_dict_from_llm_text(raw_text: str) -> dict[str, Any]:
+    """
+    Parse a single JSON object from model output.
+
+    LiteLLM / Bedrock often prefix prose or wrap fences despite "JSON only" prompts; ``json.loads``
+    on the whole string then fails with errors like "Expecting ',' delimiter".
+    """
+    s = raw_text.strip()
+    s = s.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
+    i = s.find("{")
+    if i < 0:
+        raise ValueError("No JSON object start '{' in LLM output")
+    decoder = json.JSONDecoder()
+    obj, _end = decoder.raw_decode(s[i:])
+    if not isinstance(obj, dict):
+        raise ValueError("LLM JSON root must be a JSON object")
+    return obj
+
+
 def _extract_text_from_llm_response(body: dict[str, Any], protocol: str) -> str:
     if protocol == "openai":
         choices = body.get("choices")
@@ -63,7 +82,16 @@ def _extract_text_from_llm_response(body: dict[str, Any], protocol: str) -> str:
         msg = first.get("message")
         if not isinstance(msg, dict):
             raise ValueError("OpenAI-style response missing message")
-        return str(msg.get("content") or "").strip()
+        c = msg.get("content")
+        if isinstance(c, list):
+            chunks: list[str] = []
+            for part in c:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    chunks.append(str(part.get("text") or ""))
+                elif isinstance(part, str):
+                    chunks.append(part)
+            return "".join(chunks).strip()
+        return str(c or "").strip()
 
     block = body.get("content")
     if not isinstance(block, list) or not block:
@@ -229,8 +257,7 @@ class LLMClient:
             )
             response.raise_for_status()
             raw_text = _extract_text_from_llm_response(response.json(), self._protocol)
-            raw_text = raw_text.replace("```json", "").replace("```", "").strip()
-            return json.loads(raw_text)
+            return _parse_json_dict_from_llm_text(raw_text)
         except httpx.HTTPStatusError as e:
             if e.response is not None and e.response.status_code == 401:
                 logger.debug("LLM reasoning HTTP 401 (shown in UI): %s", e)
@@ -240,6 +267,13 @@ class LLMClient:
                 "relevant": False,
                 "api_id": "none",
                 "reason": _format_llm_failure(e, e.response, e.request),
+            }
+        except json.JSONDecodeError as e:
+            logger.warning("LLM reasoning JSON parse failed: %s", e)
+            return {
+                "relevant": False,
+                "api_id": "none",
+                "reason": f"LLM returned invalid JSON ({e})",
             }
         except Exception as e:
             logger.warning("LLM reasoning failed: %s", e)
@@ -278,13 +312,15 @@ class LLMClient:
             )
             response.raise_for_status()
             raw_text = _extract_text_from_llm_response(response.json(), self._protocol)
-            raw_text = raw_text.replace("```json", "").replace("```", "").strip()
-            return json.loads(raw_text)
+            return _parse_json_dict_from_llm_text(raw_text)
         except httpx.HTTPStatusError as e:
             if e.response is not None and e.response.status_code == 401:
                 logger.debug("LLM complete_json HTTP 401: %s", e)
             else:
                 logger.warning("LLM complete_json HTTP error: %s", e)
+            return None
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning("LLM complete_json parse failed: %s", e)
             return None
         except Exception as e:
             logger.warning("LLM complete_json failed: %s", e)

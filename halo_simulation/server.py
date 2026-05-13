@@ -828,6 +828,11 @@ def run_simulation_thread(
                     from halo_simulation.rl.live_inference import attach_rl_thermostat_sidecar
 
                     attach_rl_thermostat_sidecar(sc, emit, rl_model)
+                    logger.info(
+                        "RL thermostat sidecar attached for scenario=%s (HALO_RL_THERMOSTAT_MODEL=%r)",
+                        scenario_name,
+                        rl_model,
+                    )
                 except Exception:
                     logger.exception(
                         "HALO_RL_THERMOSTAT_MODEL is set (%r) but RL thermostat sidecar failed to start",

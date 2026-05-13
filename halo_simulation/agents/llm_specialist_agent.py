@@ -371,7 +371,7 @@ Additional fields to always include:
 
 Return ONLY valid JSON. No explanation, no markdown fences."""
 
-        parsed = self._llm_client.complete_json(prompt, max_tokens=400, timeout=10.0)
+        parsed = self._llm_client.complete_json(prompt, max_tokens=1200, timeout=10.0)
         if not parsed:
             self._record_failure("interpret", api_def.api_id, "LLM interpretation returned nothing", None)
             return None

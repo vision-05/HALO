@@ -42,7 +42,7 @@ def main() -> int:
     if not args.skip_env_check:
         check_env(env, warn=True)
 
-    model = PPO("MlpPolicy", env, verbose=1, seed=args.seed)
+    model = PPO("MlpPolicy", env, verbose=1, seed=args.seed, ent_coef=0.01)
     print(f"Training PPO for {args.timesteps} timesteps...")
     model.learn(total_timesteps=int(args.timesteps))
     model.save(str(args.model))
