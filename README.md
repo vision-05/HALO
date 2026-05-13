@@ -49,3 +49,43 @@ current_state = (17.5, "Friday", "Winter", 0.0, 1)
 action_index, action_name = predict_next_action(model, env, state=current_state)
 print(f"Action to Execute: {action_name} (Index: {action_index})")
 ```
+
+## Action Space Specification
+The RL agent outputs a discrete action index ranging from **0 to 9**. These indices correspond to specific smart home interventions and must be mapped accordingly within the physical system or simulation.
+
+| Index | Action Name | Logic and Reward Context |
+| :--- | :---: | :--- |
+| **0** | Reduce Heating When Out | Triggered when the probability of the user being home is low based on the occupancy profile. |
+| **1** | Preheat Before Return Home | Activated when the probability of user return within 1 hour exceeds a learned threshold. |
+| **2** | Preheat to Preferred Temp | Sets the thermostat to the user's seasonal preference (e.g., 22°C for Winter). |
+| **3** | Recommend Movie Selection | Triggered during high-density "Movie Night" windows, specifically optimized for Fridays. |
+| **4** | Set Movie Settings (Dim Lights) | Adjusts lighting and appliance states based on the movie night KDE profile. |
+| **5** | Suggest Walking Time | Suggests a dog walk during peak routine hours, provided rain intensity is low. |
+| **6** | Alt. Walking Time (Rain) | Suggests an alternative walking time shifted by the learned "weather shift" value. |
+| **7** | Shopping List Prompt | Prompted when the user is likely to go grocery shopping and stock is low. |
+| **8** | Check Fridge & Suggest List | A high-confidence action triggered when low stock counts are $\ge 2$. |
+| **9** | No Action Needed | The agent chooses a "wait" state to avoid over-automation or user annoyance. |
+
+---
+
+## Simulation Data Requirements (CSV)
+To generate the **User Routine Profile** and fine-tune the RL agent, the simulation must provide a CSV dataset containing logged user activity. The habit-learning pipeline requires the following schema for profile generation:
+
+### Required Columns
+* **`timestamp`**: Date and time of the event in `YYYY-MM-DD HH:MM:SS` format.
+* **`event_type`**: The activity label. Required labels for the profile include:
+    * `WakeUp`, `LeaveHome`, `ReturnHome`
+    * `DogWalk`, `GroceryShopping`, `DanceClass`
+    * `TVOn`, `TVOff` (for movie habit tracking)
+* **`day_of_week`**: The full string name of the day (e.g., `Monday`, `Sunday`).
+* **`rain_intensity`**: A float value ($0.0$ to $1.0$). This is critical for calculating `weather_shift_rule` correlations.
+* **`heating_temp`**: The numerical temperature set by the user (or `Off`) to determine seasonal thermal preferences.
+* **`location_status`**: Categorical indicator of whether the user is `Home` or `Away`.
+* **`low_stock_count`**: An integer ($0$ to $4$) used to drive the RL shopping policy.
+
+### Data Example
+```csv
+timestamp,day_of_week,season,rain_intensity,location_status,event_type,heating_temp,low_stock_count
+2025-01-01 07:05:00,Wednesday,Winter,0.0,Home,WakeUp,22,1
+2025-01-01 08:45:00,Wednesday,Winter,0.0,Away,LeaveHome,22,1
+```
