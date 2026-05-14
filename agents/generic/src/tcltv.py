@@ -35,8 +35,7 @@ class TclTv(BaseAgent):
                          "spotify_next_track": self.spotify_next,
                          "spotify_prev_track": self.spotify_prev})
 
-        self.desc = "TV controlling agent, for all commands that involve playing media go through StreamAggregator first to get corresponding ID to title."
-
+        self.desc = "DescriptionStart: HARDWARE CONTROLLER. This agent controls the physical TV. It ONLY accepts system IDs for media, NEVER raw text titles. You must fetch the ID from the StreamingAggregator first and pass it here using the $* wildcard. DescriptionEnd"
         subprocess.run(["adb", "connect", self.tv_ip], capture_output=True)
         self.state["tv_status"] = "connected"
         self.state["power"] = "on"

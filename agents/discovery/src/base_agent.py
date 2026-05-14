@@ -149,7 +149,7 @@ class BaseAgent:
 
     async def expose_handlers(self) -> None:
         while True:
-            await self.send_msg("Claude", json.dumps({"action": "schema", self.name: self.get_handlers()}))
+            await self.send_msg("LanguageAgent", json.dumps({"action": "schema", self.name: self.get_handlers()}))
             await asyncio.sleep(5.0)
 
     async def broadcast_and_discover(self) -> None:
@@ -258,11 +258,13 @@ class BaseAgent:
         try:
             run_time = datetime.datetime.now() + datetime.timedelta(seconds=1)
             data = json.loads(message_data.decode('utf-8'))
-            if data.get("delay", None) is not None:
+            sched_delay = data.get("delay", None)
+            sched_time = data.get("time", None)
+            if sched_delay is not None and sched_delay != "":
                 await asyncio.sleep(data["delay"])
                 await self.run_task(data, sender_id)
                 
-            elif data.get("time", None) is not None:
+            elif sched_time is not None and sched_time != "" and sched_time != '':
                 run_time = datetime.datetime.strptime(data["time"], '%b %d %Y %I:%M%p')
                 self.scheduler.add_job(
                     self.run_task,

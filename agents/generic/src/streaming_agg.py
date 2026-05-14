@@ -21,7 +21,7 @@ class StreamingAggregator(BaseAgent):
                          "get_search_history": self.get_search_history})
                          #"explore_shows_by_search_term": self.get_titles_from_search}
 
-        self.desc = "Can fetch Netflix, Disney+, Spotify and Luna titles from a given name."
+        self.desc = "DescriptionStart: MEDIA SEARCH ENGINE. Use this agent FIRST to convert raw text titles into system IDs. Inputs: 'title' and 'service'. Outputs: 'id'. You MUST use this before sending any play commands to the TV. DescriptionEnd"
 
         self.state.update({"searched_shows": []})
 
