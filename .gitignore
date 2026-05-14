@@ -1,2 +1,3 @@
 agents/db/**
 ollama_data/
+*.env

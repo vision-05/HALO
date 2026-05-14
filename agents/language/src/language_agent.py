@@ -31,7 +31,7 @@ class LanguageAgent(BaseAgent):
         logger.debug(f"Message: {msg}")
         instruction = msg["params"].get("instruction", None)
         if instruction is None:
-            instruction = msg["params"].get("prompt", None) 
+            instruction = msg["params"].get("prompt", None)
         if instruction is None:
             instruction = msg["params"].get("task", None)
         if not instruction:
@@ -47,7 +47,7 @@ class LanguageAgent(BaseAgent):
         context_string = json.dumps(network_context, indent=2)
 
         response = await self.llm.chat(
-            model='phi4-mini',
+            model='llama3.1',
             format='json',
             messages=[
                 {
@@ -97,63 +97,51 @@ class TelegramAgent(LanguageAgent):
 Your ONLY job is to determine if a user's request requires a single action or a complex, multi-step chain of actions.
 
 RULES FOR COMPLEXITY:
-1. CROSS-AGENT DEPENDENCY: If the task requires getting data from one agent to pass to another (e.g., playing media requires fetching an ID from StreamingAggregator FIRST, then sending it to TV), it is COMPLEX.
-2. STATE VERIFICATION: If the task requires fetching a state key before acting, it is COMPLEX.
-3. SINGLE ACTION: If the task requires only one command sent to one agent, it is NOT complex.
-4. DO NOT OVER-ENGINEER: You are strictly FORBIDDEN from using `upsert_state`, `get_state_keys`, or `fetch_state_by_keys` to pass data between agents. Data is passed directly using wildcards.
+1. CROSS-AGENT DEPENDENCY: If the task requires getting data from one agent to pass to another, it is COMPLEX.
+2. DATA RETRIEVAL (CALLBACKS): If the user asks for information to be returned to them (e.g., "fetch an ID", "check the weather"), you MUST send a command to get the data, and chain it to `Messages` or `self_prompt` to give it back to the user. This is ALWAYS COMPLEX.
+3. GENERATIVE REQUESTS: If the user asks you to "recommend" something, pick a title yourself immediately. Do not ask for clarification.
+4. SINGLE ACTION: If the task is a simple one-way command (e.g., "Pause the TV") with no data needed back, it is NOT complex.
+5. DO NOT OVER-ENGINEER: You are strictly FORBIDDEN from using `upsert_state`, `get_state_keys`, or `fetch_state_by_keys`.
 
-You MUST think step-by-step before making your decision. Output ONLY valid JSON matching this exact schema:
-{{
-  "required_actions": ["list", "the", "exact", "action", "names", "you", "will", "need"],
-  "reasoning": "Explain step-by-step how these actions map to the available agents and if they trigger the complexity rules.",
-  "complex_task": true_or_false
-}}"""
+You MUST think step-by-step before making your decision. Output ONLY valid JSON."""
 
-        self.sys_prompt = """You are the HALO Orchestration formatting engine.
-Your ONLY job is to format a chained network payload using the EXACT execution plan provided.
+        self.sys_prompt = """You are a HALO management assistant. You must process the user's request and output your response ONLY as a raw JSON object. Do not include markdown formatting or conversational filler outside the JSON.
 
-CRITICAL RULES:
-1. You MUST use the `$*` wildcard in the on_success params to pass the ID to the TV.
-2. DO NOT invent new keys like "next_step". Stick EXACTLY to the JSON template below.
-
-{
-  "telegram_reply": "Your friendly, human-readable message to the user. This is where you exhibit your personality. Be decisive, fun, and helpful. If asked to solve a social conundrum (e.g., who cleans the house), suggest a fun game or activity here.",
-  "network_payload": {
-    "action": "the_actuation_command",
-    "delay": 0.5,
-    "target": "TargetAgentName",
-    "source": "LanguageAgent",
-    "params": {"param1": "value1"},
-    "on_success": {
-      "action": "next_action",
-      "target": "NextTargetName",
-      "time": "Scheduled time strictly as '%b %d %Y %I:%M%p' OR omit if immediate",
-      "source": "LanguageAgent",
-      "params": {"result_data": "$*"}
-    },
-    "on_failure": {
-      "action": "fallback_action",
-      "target": "LanguageAgent",
-      "source": "LanguageAgent",
-      "params": {"error_data": "$*"}
-    }
-  }
-}
-
-NETWORK RULES & BEHAVIORS:
-1. DELAYS: For immediate actions, set "delay": 0.5. To schedule, use the exact datetime format '%b %d %Y %I:%M%p' (e.g., 'Oct 25 2026 03:30PM') in the "time" key.
-2. DUMB AGENTS: All other agents on the network are strictly functional. Do not send conversational text to them. Use exact data keys. 
-3. SCHEMA DISCOVERY: Always use 'get_state_schema' chained before fetching data so you know exactly which keys exist in an agent's state. 
-4. WILDCARDS ($*): Use the wildcard "$*" in the "params" of "on_success" or "on_failure" to pass the dynamic result of the current action into the next action.
-5. SELF-PROMPTING: If you need to evaluate data from another agent, send an action to that agent and use "on_success" to trigger a "self_prompt" back to yourself (target "LanguageAgent"). Inject the "$*" wildcard into the self-prompt so you receive the data.
-6. ENDING CHAINS: If you have finished an analysis or created a final plan based on data, put your final recommendations in "telegram_reply", send the message, and DO NOT trigger another self-prompt. 
-7. STATE UPDATES: To persist useful data to the network state, the action is "receive_state" and the params MUST be structured with the "new_state" wrapper: {"new_state": {"key1": "value1"}}. Do not attempt to fetch a key named 'state_update'. """
-
+                        Use this exact schema:
+                        {
+                        "telegram_reply": "The friendly, human-readable message to send to the user",
+                        "network_payload": {
+                        "action": "the actuation",
+                        "delay": 5,
+                        "target": "the target",
+                        "source": "yourself",
+                        "params": {"p1": "dict of params", "p2": "more params"},
+                        "on_success": {"action": "next action",
+                                       "target": "the next target",
+                                       "time": "time in following format %b %d %Y %I:%M%p",
+                                       "source": "yourself",
+                                       "params": {"p1": "$*", "p2": "other param"}},
+                        "on_failure": {"action": "next action",
+                                       "target": "the next target",
+                                       "source": "yourself",
+                                       "params": {"p1": "$*", "p2": "other param"}}
+                        }} Where you can pass results of actions as parametsr by the wildcard $*
+                         You can either give a delay in seconds, or a datetime in the specified '%b %d %Y %I:%M%p' format to schedule all events from when they are received by the target. If you want an action to happen immediately, a delay of 0.5 seconds is a good default.
+                         Do NOT wrap your response in markdown blocks or include any backticks or the word json. If sending a message to chat, you (Claude) must be the recipient.
+                         Be decisive, when requested an action take it without second confirmation. Be helpful in making decisions and fun if possible. If you are asked to solve a conundrum,
+                         i.e. who should clean the house, come up with a fun, social way to solve it such as inviting everyone to play a game. Take initiative in starting activities.
+                         Default to self prompting to figure out answers if you have questions. Self prompt takes the entire future message chain json object.
+                         Create a message chain with what you expect the actions to be, and inject the self prompt to occur after the relevant data is fetched. MAKE SURE TO INCLUDE WILDCARDS IN THE PROMPT.
+                         Besides your own capabilities, every other agent on the network is "dumb" and should be assumed to only blindly retrieve data or complete an action. To suggest a "next_action", still use the key "on_success" as it will trigger automatically without specified failure.
+                         CRITICAL: If you are continuing a chain and are about to be done, i.e. finished analysis, coming up with a plan/recommendation, send to the chat and do not self prompt.
+                         Always fetch state keys to inform state fetching. ALWAYS INCLUDE A TARGET EVEN FOR SELF PROMPTING. Results from other agents are usually in json or similar. Make sure to pretty print where possible by self prompting on result, unless data is still being passed between agents.
+                         Update your own state and other agent states if you come across anything useful to persist. receive_state must be in the form with the "new_state" key first {"new_state": {"key1": "value}} Remember you have your own state that you can also modify and see.
+                         Update your own state and other agent states if you come across anything useful to persist. All agents on the network are not AI, and are dumb unless stated otherwise. USE THE AGENTS EXACTLY HOW THEY ARE SPECIFIED, DO NOT TRY TO GIVE UNDEFINED COMMANDS. Fetch state from agents by using the actual data keys you want. Do not ask for the key 'state_update' as it does not exist in the saved state. Use get_state_schema to find which keys you can fetch from state of an agent, you must do this chained before any data fetching. """
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         await update.message.reply_html(rf"Hi {user.mention_html()}!",
                                        reply_markup = ForceReply(selective=True))
-    
+
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         current_chat_id = update.effective_chat.id
         await update.message.reply_text(f"Help! The ID for this chat is: {current_chat_id}")
@@ -210,80 +198,13 @@ NETWORK RULES & BEHAVIORS:
             # Strip the mention out so Claude just gets the raw command
             text = text.replace(f"@{bot_username}", "").strip()
 
-        # 1. Build a clean dictionary of the current network reality
-        network_context = {
-            "your_name": self.name,
-            "your_capabilities": list(self.handlers.keys()),
-            "connected_agents": self.get_peer_info(),
-            "available_device_schemas": self.schemas
-        }
-
-        # 2. Convert it to a pretty JSON string
-        context_string = json.dumps(network_context, indent=2)
-
-        triage_schema = {
-            "type": "object",
-            "properties": {
-                "required_actions": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                },
-                "reasoning": {"type": "string"},
-                "complex_task": {"type": "boolean"}
-            },
-            "required": ["required_actions", "reasoning", "complex_task"]
-        }
-
-        # 3. Inject it cleanly into the prompt with clear boundaries
         response = await self.llm.chat(
-            model = 'phi4-mini',
-            format=triage_schema,
+            model='llama3.1',
+            format='json',
             messages=[
                 {
                     'role': 'system',
-                    'content': self.route_prompt + f"\n\n### CURRENT NETWORK STATE ###\n{context_string}",
-                },
-                {
-                    'role': 'user',
-                    'context': text
-                }
-            ])
-        
-        logger.debug(response)
-
-        msg = json.loads(response["message"]["content"])
-
-        actions = msg.get("required_actions", [])
-        reasoning = msg.get("reasoning", "")
-
-        orchestration_schema = {
-            "type": "object",
-            "properties": {
-                "telegram_reply": {"type": "string"},
-                "network_payload": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string"},
-                        "target": {"type": "string"},
-                        "delay": {"type": "number"},
-                        "source": {"type": "string"},
-                        "params": {"type": "object"},
-                        "on_success": {"type": "object"},
-                        "on_failure": {"type": "object"}
-                    },
-                    "required": ["action", "target", "source", "params"]
-                }
-            },
-            "required": ["telegram_reply", "network_payload"]
-        }
-
-        response = await self.llm.chat(
-            model='phi4-mini',
-            format=orchestration_schema,
-            messages=[
-                {
-                    'role': 'system',
-                    'content': f"Execution plan (DO NOT DEVIATE): actions={actions}, reasoning={reasoning}. Format ONLY, with context {context_string}"
+                    'content': f"You name is {self.name} and you have the following capabilities: {list(self.handlers.keys())} {self.sys_prompt} the following agents are connected: {self.get_peer_info()} and they can do the following: {self.schemas}"
                 },
                 {
                     'role': 'user',
@@ -330,7 +251,7 @@ NETWORK RULES & BEHAVIORS:
         short_id = uuid.uuid4().hex[:12]
         self.pending_peers[short_id] = {"name": clean_name,
                                         "data": peerdata}
-        
+
         message = (
             f"🌐 <b>New HALO Node Discovered</b>\n"
             f"Name: {clean_name}\n"
@@ -375,7 +296,7 @@ NETWORK RULES & BEHAVIORS:
 
                 del self.pending_peers[short_id]
             else:
-                await query.edit_message_text(text=f"{clean_name} is no longer available")
+                await query.edit_message_text(text=f"agent is no longer available")
         elif data.startswith("rej_"):
             short_id = data.split("rej_")[1]
             pending_data = self.pending_peers[short_id]
@@ -383,7 +304,7 @@ NETWORK RULES & BEHAVIORS:
             await query.edit_message_text(text=f"Rejected {clean_name}")
             self.pending_peers.pop(short_id, None)
 
-    def get_peer_info(self) -> None:
+    def get_peer_info(self) -> list:
         return list(self.peers.keys())
 
     def get_peer_schema(self, msg: dict) -> None:
