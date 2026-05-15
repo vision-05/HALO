@@ -6,6 +6,7 @@ A HALO agent is a self contained program that completes tasks on the HALO networ
 
 ## Running agents
 We have chosen to use docker-compose to run each agent. An agent runs in its own container as specified in the services list. For example:  
+
 - Language Agent: docker compose up language
 - Stream browser (for netflix, disney+, spotify, luna fetching): docker compose up stream
 - TV: docker compose up livingroomtv
@@ -14,6 +15,7 @@ We have chosen to use docker-compose to run each agent. An agent runs in its own
 - Bootstrap (for network initialisation): docker compose up bootstrap
 
 Some of these require environment variables:  
+
 - Language agent
  - CLAUDE_KEY
  - TELEGRAM_KEY
