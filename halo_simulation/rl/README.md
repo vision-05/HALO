@@ -1,7 +1,6 @@
 # HALO × RL (`smart_simulation` branch)
 
-This folder wires **Proximal Policy Optimization (PPO)** experiments to a **JSON routine profile** (`SmartHomeEnv`).  
-For **Option 2** (control the **simulated house**), use the **`halo_simulation.rl`** package instead of `RL/environment.py`.
+This folder trains **PPO** on the **SimPy** thermostat MDP (`HaloTemperatureRlEnv` / `TemperatureRlDriver`) — not the JSON-profile `SmartHomeEnv` in `RL/environment.py` (that path stays under **`RL/`** for comparison).
 
 ## 1. Branch
 
