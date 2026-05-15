@@ -94,7 +94,7 @@ PYTHONPATH=. python -m halo_simulation.cli_human --scenario fused --days 2 --dem
 
 ---
 
-## Thermostat RL — train vs live (read this before blaming the UI)
+## Thermostat RL — train vs live 
 
 There are **two** RL stories in the repo:
 
@@ -158,7 +158,7 @@ PYTHONPATH=. pytest halo_simulation/tests/
 
 ---
 
-## Rough edges (so you don’t burn an afternoon)
+## Rough edges 
 
 - **Venv vs conda:** SB3 missing in the process that serves uvicorn almost always means “wrong Python,” not “SB3 doesn’t exist on Earth.” Align `which python` with the interpreter you use for `python -m uvicorn`.
 
