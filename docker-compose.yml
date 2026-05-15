@@ -14,6 +14,7 @@ services:
       - CLAUDE_KEY
       - TELEGRAM_KEY
       - TEL_CHAT_ID
+      - LANG_MODE
       - PYTHONUNBUFFERED=1
     command: python -m watchfiles 'python /app/language/src/main.py' /app
 
@@ -228,6 +229,26 @@ services:
       - ./agents/discovery/src:/app/discovery/src
       - ./agents/watchdog/src:/app/watchdog/src
       - ./agents/db:/app/db
+
+  prompt-tune-gen:
+    build:
+      context: ./prompt-finetuning
+      target: gen
+    container_name: halo-prompt-gen
+    network_mode: "host"
+    volumes:
+      - ./prompt-finetuning/src/:/app/src/
+      - ./prompt-finetuning/data/:/app/data/
+
+  prompt-tune:
+    build:
+      context: ./prompt-finetuning/
+      target: tune
+    container_name: halo-prompt-tune
+    network_mode: "host"
+    volumes:
+      - ./prompt-finetuning/src/:/app/src/
+      - ./prompt-finetuning/data/:/app/data/
 
   docs:
     build:

@@ -18,12 +18,25 @@ from loguru import logger
 import aiohttp
 from ollama import AsyncClient
 CLAUDE_API_KEY = os.environ['CLAUDE_KEY']
+MODE = os.environ['LANG_MODE']
 
 class LanguageAgent(BaseAgent):
     def __init__(self, name, role):
         super().__init__(name, role)
 
-        self.llm = AsyncClient(host='http://127.0.0.1:11434')
+        if MODE == "LOCAL":
+            self.llm = AsyncClient(host='http://127.0.0.1:11434')
+            self.get_resp_fn = self.local_response
+        else:
+            self.llm = ChatOpenAI(
+                model='bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0',
+                temperature=0.7,
+                max_tokens=1024,
+                api_key=CLAUDE_API_KEY,
+                base_url='https://litellm.prod.outshift.ai/'
+            )
+
+            self.get_resp_fn = self.claude_response
 
         self.sys_prompt = ""
 
@@ -44,22 +57,7 @@ class LanguageAgent(BaseAgent):
             "available_device_schemas": self.schemas
         }
 
-        context_string = json.dumps(network_context, indent=2)
-
-        response = await self.llm.chat(
-            model='llama3.1',
-            format='json',
-            messages=[
-                {
-                    'role': 'system',
-                    'content': self.sys_prompt + f"\n\n### CURRENT NETWORK STATE ###\n{context_string}"
-                },
-                {
-                    'role': 'system',
-                    'content': instruction # (or 'instruction' if in self_prompt)
-                }
-            ])
-        response = response["message"]["content"]
+        response = self.get_resp_fn(instruction)
         if response[0] == "`":
             response = response[7:-3]
         human_resp = json.loads(response)
@@ -198,21 +196,7 @@ You MUST think step-by-step before making your decision. Output ONLY valid JSON.
             # Strip the mention out so Claude just gets the raw command
             text = text.replace(f"@{bot_username}", "").strip()
 
-        response = await self.llm.chat(
-            model='llama3.1',
-            format='json',
-            messages=[
-                {
-                    'role': 'system',
-                    'content': f"You name is {self.name} and you have the following capabilities: {list(self.handlers.keys())} {self.sys_prompt} the following agents are connected: {self.get_peer_info()} and they can do the following: {self.schemas}"
-                },
-                {
-                    'role': 'user',
-                    'content': text
-                }
-            ])
-
-        response = response["message"]["content"]
+        response = await self.get_resp_fn(text)
         logger.debug(response)
         if response[0] == "`":
             response = response[7:-3]
@@ -228,6 +212,39 @@ You MUST think step-by-step before making your decision. Output ONLY valid JSON.
         if target is not None:
             for command in commands:
                 await self.send_msg(command["target"], json.dumps(command))
+
+    @property
+    def context_injected_prompt(self):
+        return self.sys_prompt + f"Your name is {self.name} and you have the following capabilities: {list(self.handlers.keys())} {self.sys_prompt} the following agents are connected: {self.get_peer_info()} and they can do the following: {self.schemas}"
+
+
+    @context_injected_prompt.setter
+    def context_injected_prompt(self, value):
+        self.sys_prompt = value
+
+    @context_injected_prompt.deleter
+    def context_injected_prompt(self):
+        del self.sys_prompt
+
+    async def claude_response(self, prompt: str) -> dict:
+        response = await self.llm.ainvoke(self.context_injected_prompt + prompt)
+        return response.content
+
+    async def local_response(self, prompt: str) -> dict:
+        response = await self.llm.chat(
+        model='llama3.1',
+        format='json',
+        messages=[{
+                    'role': 'system',
+                    'content': self.context_injected_prompt + prompt
+                  },
+                  {
+                    'role': 'system',
+                    'content': prompt # (or 'instruction' if in self_prompt)
+                  }
+                  ])
+        return response["message"]["content"]
+
 
     async def accept_peer(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not context.args:
