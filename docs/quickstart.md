@@ -11,6 +11,7 @@ We have chosen to use docker-compose to run each agent. An agent runs in its own
 - Stream browser (for netflix, disney+, spotify, luna fetching): docker compose up stream
 - TV: docker compose up livingroomtv
 - Advocator: docker compose up advocator
+- RL planner: docker compose up rl-agent
 - Watchdog (network self-healing): docker compose up halo-watchdog
 - Bootstrap (for network initialisation): docker compose up bootstrap
 
@@ -23,6 +24,19 @@ Some of these require environment variables:
  - LANG_MODE (LOCAL/CLAUDE)
 - Advocator
  - AGENT_NAME
+
+- RL planner
+ - AGENT_NAME
+ - AGENT_ROLE
+ - RL_PROFILE_PATH
+ - RL_MODEL_PATH
+ - RL_ACTIVITY_LOG_PATH
+ - RL_PREDICTION_INTERVAL_MINUTES
+ - RL_MONTHLY_WINDOW_DAYS
+ - RL_MONTHLY_TIMESTEPS
+ - RL_MONTHLY_LR
+ - RL_BOOTSTRAP_TIMESTEPS
+ - RL_SEED
  
 You can put these in a `.env` file in the HALO folder.
 

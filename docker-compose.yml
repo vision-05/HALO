@@ -158,6 +158,34 @@ services:
       - AGENT_NAME=WEatherAggregator
       - AGENT_ROLE=Aggregator
     command: python -m watchfiles 'python /app/generic/src/weather.py' /app
+
+  rl-agent:
+    build:
+      context: .
+      dockerfile: agents/rl/Dockerfile
+      target: prod
+    container_name: halo-rl-agent
+    network_mode: host
+    volumes:
+      - ./agents/rl/src:/app/rl/src
+      - ./agents/discovery/src:/app/discovery/src
+      - ./RL:/app/RL
+      - ./routine_learning:/app/routine_learning
+      - ./agents/db:/app/db
+    environment:
+      - PYTHONUNBUFFERED=1
+      - AGENT_NAME=RLAgent
+      - AGENT_ROLE=Planner
+      - RL_PROFILE_PATH=/app/routine_learning/user_routine_profile.json
+      - RL_MODEL_PATH=/app/RL/smart_home_ppo_agent
+      - RL_ACTIVITY_LOG_PATH=/app/db/rl_activity_log.jsonl
+      - RL_PREDICTION_INTERVAL_MINUTES=15
+      - RL_MONTHLY_WINDOW_DAYS=30
+      - RL_MONTHLY_TIMESTEPS=2000
+      - RL_MONTHLY_LR=0.00005
+      - RL_BOOTSTRAP_TIMESTEPS=25000
+      - RL_SEED=42
+    command: python /app/rl/src/main.py
   
   generic-test:
     build:
