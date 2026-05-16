@@ -5,3 +5,4 @@ ddgs
 loguru
 apscheduler
 aiohttp
+pyhive-integration

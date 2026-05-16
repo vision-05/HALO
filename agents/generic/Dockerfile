@@ -62,3 +62,10 @@ COPY generic/src/ ./generic/src/
 COPY discovery/src/ ./discovery/src/
 
 ENTRYPOINT [ "python", "generic/src/weather.py" ]
+
+FROM base AS thermostat
+
+COPY generic/src/ ./generic/src/
+COPY discovery/src/ ./discovery/src/
+
+ENTRYPOINT ["python", "generic/src/thermostat.py"]
