@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Generator
 from typing import Any
 
 import numpy as np
@@ -124,6 +125,80 @@ class DeviceAgent(BaseAgent):
                 )
             )
 
+    def _negotiation_response_types(self) -> frozenset[str]:
+        return frozenset(
+            {
+                MessageTypes.NegotiationAccept,
+                MessageTypes.NegotiationCounter,
+                MessageTypes.NegotiationReject,
+            }
+        )
+
+    def _yield_collect_negotiation_round_responses(
+        self,
+        negotiation_id: str,
+        proposal: float,
+        participants: list[str],
+        *,
+        indefinite_wait: bool,
+    ) -> Generator[Any, Any, tuple[dict[str, str], dict[str, float]]]:
+        """Gather accept/counter/reject for one proposal round; optional sim-time deadline (see config)."""
+        responses: dict[str, str] = {}
+        counters: dict[str, float] = {}
+        n_needed = len(participants)
+        types = self._negotiation_response_types()
+        part_set = frozenset(participants)
+
+        if indefinite_wait:
+            while len(responses) < n_needed:
+                rmsg: Message = yield self.inbox.get()
+                if rmsg.msg_type not in types:
+                    self._handle_message(rmsg)
+                    continue
+                pl = rmsg.payload or {}
+                if pl.get("negotiation_id") != negotiation_id:
+                    self._handle_message(rmsg)
+                    continue
+                sender = rmsg.sender_id
+                if sender not in part_set:
+                    self._handle_message(rmsg)
+                    continue
+                if rmsg.msg_type == MessageTypes.NegotiationAccept:
+                    responses[sender] = "accept"
+                elif rmsg.msg_type == MessageTypes.NegotiationCounter:
+                    responses[sender] = "counter"
+                    counters[sender] = float(pl.get("counter_value", proposal))
+                else:
+                    responses[sender] = "reject"
+        else:
+            deadline = self.env.now + config.NEGOTIATION_TIMEOUT
+            while len(responses) < n_needed and self.env.now < deadline:
+                remaining = max(0.0, deadline - self.env.now)
+                res, get_ev = yield from self.wait_inbox_or_timeout(remaining)
+                if get_ev not in res:
+                    break
+                rmsg = res[get_ev]
+                if rmsg.msg_type not in types:
+                    self._handle_message(rmsg)
+                    continue
+                pl = rmsg.payload or {}
+                if pl.get("negotiation_id") != negotiation_id:
+                    self._handle_message(rmsg)
+                    continue
+                sender = rmsg.sender_id
+                if sender not in part_set:
+                    self._handle_message(rmsg)
+                    continue
+                if rmsg.msg_type == MessageTypes.NegotiationAccept:
+                    responses[sender] = "accept"
+                elif rmsg.msg_type == MessageTypes.NegotiationCounter:
+                    responses[sender] = "counter"
+                    counters[sender] = float(pl.get("counter_value", proposal))
+                else:
+                    responses[sender] = "reject"
+
+        return responses, counters
+
 
 class ThermostatDeviceAgent(DeviceAgent):
     def __init__(
@@ -169,6 +244,65 @@ class ThermostatDeviceAgent(DeviceAgent):
             boost = self._cost_pressure_boost
         return min(float(self.device_weight) + boost, 0.9)
 
+    def _thermostat_indefinite_wait_for_round(self, participants: list[str]) -> bool:
+        """Wait without sim deadline only while every HITL id in this round is still at home."""
+        ids = set(config.NEGOTIATION_INDEFINITE_WAIT_AGENT_IDS)
+        if not any(pid in ids for pid in participants):
+            return False
+        for pid in participants:
+            if pid not in ids:
+                continue
+            info = self._preferences.get(pid)
+            if info is None:
+                return False
+            if not bool(info.get("is_home", True)):
+                return False
+        return True
+
+    def _maybe_fast_reweight_setpoint(self) -> None:
+        """Apply one weighted proposal from current prefs (presence/weights) without negotiation rounds."""
+        if self._state.get("device_state") in ("failed", "maintenance_required"):
+            return
+        if self._negotiation_in_progress:
+            return
+        if len(self._preferences) < 1:
+            return
+
+        participants = list(self._preferences.keys())
+
+        def eff_weight(pid: str) -> float:
+            info = self._preferences[pid]
+            return protocol.effective_person_weight(
+                float(info["comfort_weight"]),
+                bool(info["is_home"]),
+            )
+
+        weights = [eff_weight(p) for p in participants]
+        values = [float(self._preferences[p]["temperature"]) for p in participants]
+        proposal = protocol.combined_proposal(
+            values,
+            weights,
+            self._device_optimal,
+            self._effective_device_weight(),
+            self._last_carbon,
+        )
+        self._comfort_setpoint = self._clamp_setpoint(float(proposal))
+        self._state["target_temp"] = self._applied_setpoint()
+        applied = float(self._state["target_temp"])
+        self.send(
+            self.agent_id,
+            Message.create(
+                self.agent_id,
+                self.agent_id,
+                MessageTypes.ActuationCommand,
+                {
+                    "target_temperature": applied,
+                    "outdoor_heating_off": self._outdoor_heating_should_off(),
+                },
+                self.env.now,
+            ),
+        )
+
     def _clamp_setpoint(self, value: float) -> float:
         low = float(config.THERMOSTAT_MIN)
         high = float(config.THERMOSTAT_MAX)
@@ -212,6 +346,8 @@ class ThermostatDeviceAgent(DeviceAgent):
     def _handle_message(self, msg: Message) -> None:
         if msg.msg_type == MessageTypes.CarbonIntensityUpdate:
             self._last_carbon = float(msg.payload.get("current", self._last_carbon))
+            if not self._negotiation_in_progress and len(self._preferences) >= 1:
+                self._maybe_fast_reweight_setpoint()
         elif msg.msg_type == MessageTypes.WeatherUpdate:
             raw = msg.payload.get("outdoor_temp_c")
             if raw is not None:
@@ -232,6 +368,8 @@ class ThermostatDeviceAgent(DeviceAgent):
                 "is_home": bool(pl.get("is_home", True)),
             }
             self._maybe_start_negotiation()
+            if not self._negotiation_in_progress and len(self._preferences) >= 1 and not self._conflict():
+                self._maybe_fast_reweight_setpoint()
         elif msg.msg_type == MessageTypes.CostPressureUpdate:
             sev = str(msg.payload.get("severity", "low")).lower()
             if sev == "high":
@@ -248,6 +386,8 @@ class ThermostatDeviceAgent(DeviceAgent):
                 sev,
                 self._cost_pressure_boost,
             )
+            if not self._negotiation_in_progress and len(self._preferences) >= 1:
+                self._maybe_fast_reweight_setpoint()
         elif msg.msg_type == MessageTypes.WeatherForecastAlert:
             pl = msg.payload or {}
             hourly = pl.get("hourly")
@@ -275,15 +415,6 @@ class ThermostatDeviceAgent(DeviceAgent):
             MessageTypes.NegotiationReject,
         ):
             pass
-
-    def _negotiation_response_types(self) -> frozenset[str]:
-        return frozenset(
-            {
-                MessageTypes.NegotiationAccept,
-                MessageTypes.NegotiationCounter,
-                MessageTypes.NegotiationReject,
-            }
-        )
 
     def _conflict(self) -> bool:
         if len(self._preferences) < 2:
@@ -332,7 +463,6 @@ class ThermostatDeviceAgent(DeviceAgent):
                     self._effective_device_weight(),
                     self._last_carbon,
                 )
-                counters: dict[str, float] = {}
                 for pid in participants:
                     m = Message.create(
                         self.agent_id,
@@ -349,30 +479,12 @@ class ThermostatDeviceAgent(DeviceAgent):
                     )
                     self.send(pid, m)
 
-                responses: dict[str, str] = {}
-                deadline = self.env.now + config.NEGOTIATION_TIMEOUT
-                while len(responses) < len(participants) and self.env.now < deadline:
-                    remaining = max(0.0, deadline - self.env.now)
-                    res, get_ev = yield from self.wait_inbox_or_timeout(remaining)
-                    if get_ev in res:
-                        rmsg = res[get_ev]
-                        if rmsg.msg_type not in self._negotiation_response_types():
-                            self._handle_message(rmsg)
-                            continue
-                        pl = rmsg.payload
-                        if pl.get("negotiation_id") != nid:
-                            self._handle_message(rmsg)
-                            continue
-                        sender = rmsg.sender_id
-                        if rmsg.msg_type == MessageTypes.NegotiationAccept:
-                            responses[sender] = "accept"
-                        elif rmsg.msg_type == MessageTypes.NegotiationCounter:
-                            responses[sender] = "counter"
-                            counters[sender] = float(pl.get("counter_value", proposal))
-                        else:
-                            responses[sender] = "reject"
-                    else:
-                        break
+                responses, counters = yield from self._yield_collect_negotiation_round_responses(
+                    nid,
+                    proposal,
+                    participants,
+                    indefinite_wait=self._thermostat_indefinite_wait_for_round(participants),
+                )
 
                 for pid in participants:
                     if pid not in responses:
@@ -444,6 +556,7 @@ class ThermostatDeviceAgent(DeviceAgent):
                         carbon_intensity=self._last_carbon,
                         fallback_used=fallback_used,
                         participant_preferences=prefs_snapshot,
+                        preference_attribute="temperature",
                     )
                 )
 
@@ -491,27 +604,6 @@ class ThermostatDeviceAgent(DeviceAgent):
             )
         finally:
             self._negotiation_in_progress = False
-
-    def apply_rl_comfort_delta(self, delta_celsius: float) -> dict[str, Any]:
-        """Shift negotiated comfort setpoint for RL training (Option 2 hook).
-
-        Skips while a negotiation is running so we do not fight the protocol loop.
-        """
-        if self._negotiation_in_progress:
-            return {
-                "applied": False,
-                "reason": "negotiation_in_progress",
-                "comfort_setpoint": float(self._comfort_setpoint),
-            }
-        if self._state.get("device_state") in ("failed", "maintenance_required"):
-            return {"applied": False, "reason": "device_down", "comfort_setpoint": float(self._comfort_setpoint)}
-        self._comfort_setpoint = self._clamp_setpoint(float(self._comfort_setpoint) + float(delta_celsius))
-        self._apply_outdoor_heating_rule()
-        return {
-            "applied": True,
-            "comfort_setpoint": float(self._comfort_setpoint),
-            "target_temp": float(self._state.get("target_temp", self._comfort_setpoint)),
-        }
 
     def run(self):
         while True:
@@ -633,6 +725,24 @@ class ShowerDeviceAgent(DeviceAgent):
         self._state["device_state"] = "idle"
         self._state["hot_water_available"] = 1.0
         self._last_carbon = float(config.CARBON_HOURLY_BASELINE[12])
+        self._last_auto_preheat_block_notice = -1e12
+        self._preheat_busy = False
+        self._shower_preferences: dict[str, dict[str, Any]] = {}
+        self._negotiation_in_progress = False
+
+    def _shower_indefinite_wait_for_round(self, participants: list[str]) -> bool:
+        ids = set(config.NEGOTIATION_INDEFINITE_WAIT_AGENT_IDS)
+        if not any(pid in ids for pid in participants):
+            return False
+        for pid in participants:
+            if pid not in ids:
+                continue
+            info = self._shower_preferences.get(pid)
+            if info is None:
+                return False
+            if not bool(info.get("is_home", True)):
+                return False
+        return True
 
     def _publish_hw(
         self,
@@ -664,12 +774,299 @@ class ShowerDeviceAgent(DeviceAgent):
             )
         )
 
+    def _water_notice(self, detail: str) -> None:
+        self.broadcast(
+            Message.create(
+                self.agent_id,
+                "broadcast",
+                MessageTypes.WaterServiceNotice,
+                {"detail": detail.strip()},
+                self.env.now,
+            )
+        )
+
+    def _maybe_emit_auto_preheat_block(self) -> None:
+        gap = float(config.FUSED_AUTO_PREHEAT_BLOCK_NOTICE_COOLDOWN_MIN)
+        if self.env.now - self._last_auto_preheat_block_notice < gap:
+            return
+        self._last_auto_preheat_block_notice = self.env.now
+        cap = int(config.CARBON_HIGH_THRESHOLD)
+        cur = int(self._last_carbon)
+        self._water_notice(f"Auto preheat held — grid {cur} gCO2/kWh (needs under {cap}).")
+
     def _handle_message(self, msg: Message) -> None:
+        if msg.msg_type == MessageTypes.PreferenceDeclaration:
+            pl = msg.payload
+            pid = str(pl.get("person_id", msg.sender_id))
+            prefs = pl.get("preferences", {})
+            temp = float(prefs.get("temperature", 21.0))
+            self._shower_preferences[pid] = {
+                "shower_minutes": float(protocol.shower_minutes_from_comfort_temp(temp)),
+                "comfort_weight": float(pl.get("comfort_weight", config.DEFAULT_COMFORT_WEIGHT)),
+                "is_home": bool(pl.get("is_home", True)),
+            }
+            return
         if msg.msg_type == MessageTypes.CarbonIntensityUpdate:
             self._last_carbon = float(msg.payload.get("current", self._last_carbon))
             return
         if msg.msg_type == MessageTypes.ArrivalNotice:
-            self.env.process(self._use_shower(msg.sender_id))
+            self.env.process(self._shower_intent_pipeline(msg.sender_id))
+            return
+        if msg.msg_type == MessageTypes.WaterShowerIntent:
+            who = str(msg.payload.get("initiator", msg.sender_id))
+            self.env.process(self._shower_intent_pipeline(who))
+            return
+        if msg.msg_type == MessageTypes.WaterPreheatIntent:
+            who = str(msg.payload.get("initiator", msg.sender_id))
+            self.env.process(self._preheat_for_person(who))
+            return
+
+    def _emit_synthetic_shower_intent(self, initiator: str) -> None:
+        m = Message.create(
+            initiator,
+            self.agent_id,
+            MessageTypes.WaterShowerIntent,
+            {"initiator": initiator},
+            self.env.now,
+        )
+        self.send(self.agent_id, m)
+
+    def _fused_demo_shower_negotiations(self) -> Generator[Any, Any, None]:
+        """Simulated shower requests so fused runs show shower-duration negotiation in the feed."""
+        if self._scenario_name != "fused":
+            return
+        yield self.env.timeout(420.0)
+        self._emit_synthetic_shower_intent("person_alice")
+        yield self.env.timeout(1380.0)
+        self._emit_synthetic_shower_intent("person_bob")
+        yield self.env.timeout(1320.0)
+        self._emit_synthetic_shower_intent("person_cli")
+
+    def _ensure_participant_pref(self, pid: str) -> None:
+        if pid not in self._shower_preferences:
+            self._shower_preferences[pid] = {
+                "shower_minutes": (float(config.SHOWER_DURATION_MIN_MINUTES) + float(config.SHOWER_DURATION_MAX_MINUTES))
+                / 2.0,
+                "comfort_weight": float(config.DEFAULT_COMFORT_WEIGHT),
+                "is_home": True,
+            }
+
+    def _shower_intent_pipeline(self, person_id: str) -> Generator[Any, Any, None]:
+        if self._preheat_busy:
+            self._water_notice("Shower deferred — preheat ramp active.")
+            return
+        if self._negotiation_in_progress:
+            self._water_notice("Shower deferred — another negotiation is in progress.")
+            return
+        if self._state.get("device_state") != "idle":
+            return
+        minutes = yield from self._negotiate_shower_minutes(person_id)
+        if minutes <= 0:
+            return
+        yield from self._execute_shower_cycle(person_id, minutes)
+
+    def _negotiate_shower_minutes(self, initiator: str) -> Generator[Any, Any, float]:
+        self._ensure_participant_pref(initiator)
+        participants = sorted(
+            pid for pid, info in self._shower_preferences.items() if info.get("is_home", True)
+        )
+        lo = float(config.SHOWER_DURATION_MIN_MINUTES)
+        hi = float(config.SHOWER_DURATION_MAX_MINUTES)
+        if len(participants) < 2:
+            m = float(self._shower_preferences.get(initiator, {}).get("shower_minutes", 15.0))
+            return float(max(lo, min(hi, m)))
+
+        mins_list = [float(self._shower_preferences[p]["shower_minutes"]) for p in participants]
+        if max(mins_list) - min(mins_list) <= 0.51:
+            return float(np.clip(float(np.mean(mins_list)), lo, hi))
+
+        self._negotiation_in_progress = True
+        try:
+            return float((yield from self._run_shower_negotiation_rounds(participants)))
+        finally:
+            self._negotiation_in_progress = False
+
+    def _run_shower_negotiation_rounds(self, participants: list[str]) -> Generator[Any, Any, float]:
+        clip_lo = float(config.SHOWER_DURATION_MIN_MINUTES)
+        clip_hi = float(config.SHOWER_DURATION_MAX_MINUTES)
+        device_optimal = float(config.SHOWER_DEVICE_OPTIMAL_MINUTES)
+
+        def eff_weight(pid: str) -> float:
+            info = self._shower_preferences[pid]
+            return protocol.effective_person_weight(
+                float(info["comfort_weight"]),
+                bool(info.get("is_home", True)),
+            )
+
+        weights = [eff_weight(p) for p in participants]
+        original_values = [float(self._shower_preferences[p]["shower_minutes"]) for p in participants]
+        current_values = list(original_values)
+        iteration = 0
+        converged_flag = False
+        fallback_used = False
+        final_value = float(np.mean(current_values))
+        nid = str(uuid.uuid4())
+
+        while iteration < config.MAX_ITERATIONS:
+            iteration += 1
+            proposal = protocol.combined_proposal(
+                current_values,
+                weights,
+                device_optimal,
+                float(self.device_weight),
+                self._last_carbon,
+                clip_lo=clip_lo,
+                clip_hi=clip_hi,
+            )
+            for pid in participants:
+                m = Message.create(
+                    self.agent_id,
+                    pid,
+                    MessageTypes.NegotiationProposal,
+                    {
+                        "negotiation_id": nid,
+                        "round": iteration,
+                        "proposed_value": proposal,
+                        "device_id": self.agent_id,
+                        "attribute": "shower_minutes",
+                    },
+                    self.env.now,
+                )
+                self.send(pid, m)
+
+            responses, counters = yield from self._yield_collect_negotiation_round_responses(
+                nid,
+                proposal,
+                participants,
+                indefinite_wait=self._shower_indefinite_wait_for_round(participants),
+            )
+
+            for pid in participants:
+                if pid not in responses:
+                    responses[pid] = "timeout"
+
+            new_values = []
+            for i, pid in enumerate(participants):
+                r = responses[pid]
+                if r == "counter" and pid in counters:
+                    new_values.append(float(np.clip(counters[pid], clip_lo, clip_hi)))
+                elif r in ("accept", "timeout"):
+                    new_values.append(proposal)
+                else:
+                    new_values.append(current_values[i])
+
+            if protocol.converged(new_values):
+                converged_flag = True
+                final_value = proposal
+                break
+
+            current_values = new_values
+
+        if not converged_flag:
+            fallback_used = config.FALLBACK_TO_UNWEIGHTED_AVERAGE
+            if fallback_used:
+                final_value = float(
+                    np.clip(protocol.unweighted_average(original_values), clip_lo, clip_hi)
+                )
+            else:
+                final_value = protocol.combined_proposal(
+                    current_values,
+                    weights,
+                    device_optimal,
+                    float(self.device_weight),
+                    self._last_carbon,
+                    clip_lo=clip_lo,
+                    clip_hi=clip_hi,
+                )
+
+        final_value = float(np.clip(float(final_value), clip_lo, clip_hi))
+
+        sat = {
+            p: protocol.satisfaction_score(
+                final_value,
+                float(self._shower_preferences[p]["shower_minutes"]),
+                preference_range=12.0,
+            )
+            for p in participants
+        }
+        prefs_snapshot = {p: float(self._shower_preferences[p]["shower_minutes"]) for p in participants}
+
+        if self._metrics:
+            self._metrics.log_negotiation(
+                NegotiationEvent(
+                    timestamp=self.env.now,
+                    scenario=self._scenario_name,
+                    device_id=self.agent_id,
+                    participants=participants,
+                    iterations=iteration,
+                    converged=converged_flag,
+                    final_value=final_value,
+                    satisfaction_scores=sat,
+                    carbon_intensity=self._last_carbon,
+                    fallback_used=fallback_used,
+                    participant_preferences=prefs_snapshot,
+                    preference_attribute="shower_minutes",
+                )
+            )
+
+        self.broadcast(
+            Message.create(
+                self.agent_id,
+                "broadcast",
+                MessageTypes.NegotiationResolved,
+                {
+                    "final_value": final_value,
+                    "device_id": self.agent_id,
+                    "attribute": "shower_minutes",
+                    "iterations": iteration,
+                    "converged": converged_flag,
+                    "fallback_used": fallback_used,
+                    "participant_preferences": prefs_snapshot,
+                },
+                self.env.now,
+            )
+        )
+
+        if fallback_used and not converged_flag:
+            self.broadcast(
+                Message.create(
+                    self.agent_id,
+                    "broadcast",
+                    MessageTypes.NegotiationFailed,
+                    {"device_id": self.agent_id, "final_value": final_value, "attribute": "shower_minutes"},
+                    self.env.now,
+                )
+            )
+
+        return final_value
+
+    def _execute_shower_cycle(self, person_id: str, duration_minutes: float) -> Generator[Any, Any, None]:
+        if self._state.get("device_state") != "idle":
+            return
+        dur = float(np.clip(duration_minutes, float(config.SHOWER_DURATION_MIN_MINUTES), float(config.SHOWER_DURATION_MAX_MINUTES)))
+        base_cost = float(config.HOT_WATER_DRAIN_PER_SHOWER)
+        cost = float(np.clip(base_cost * (dur / 15.0), 0.0, 1.0))
+        level = float(self._state.get("hot_water_available", 1.0))
+        if level + 1e-12 < cost:
+            self._publish_hw(
+                notify_feed=True,
+                feed_suffix=f"skip — need {int(round(cost * 100))}% tank for {dur:.1f}m shower ({person_id})",
+            )
+            return
+        self._state["device_state"] = "running"
+        self._publish_hw(device_activity="running", shower_user_id=person_id)
+        yield self.env.timeout(dur)
+        level = float(self._state.get("hot_water_available", 1.0))
+        self._state["hot_water_available"] = max(0.0, level - cost)
+        self._state["device_state"] = "idle"
+        pct = int(round(100.0 * float(self._state["hot_water_available"])))
+        self._publish_hw(
+            device_activity="idle",
+            notify_feed=True,
+            feed_suffix=f"done · {person_id} · {dur:.1f}m · tank {pct}%",
+            shower_user_id=None,
+        )
+        self._try_fused_auto_preheat_if_eligible()
 
     def _recharge_step(self, dt_minutes: float) -> None:
         ds = self._state.get("device_state")
@@ -685,32 +1082,87 @@ class ShowerDeviceAgent(DeviceAgent):
         self._state["hot_water_available"] = after
         self._publish_hw()
 
-    def _use_shower(self, person_id: str):
+    def _try_fused_auto_preheat_if_eligible(self) -> None:
+        """Fused only: refill ramp when tank is below trigger, unit idle, grid carbon under cap."""
+        if self._scenario_name != "fused":
+            return
+        if self._preheat_busy:
+            return
         if self._state.get("device_state") != "idle":
             return
-        cost = float(config.HOT_WATER_DRAIN_PER_SHOWER)
-        level = float(self._state.get("hot_water_available", 1.0))
-        if level + 1e-12 < cost:
-            self._publish_hw(
-                notify_feed=True,
-                feed_suffix=f"skip — depleted ({person_id})",
-            )
+        tank = float(self._state.get("hot_water_available", 1.0))
+        if tank >= float(config.FUSED_AUTO_PREHEAT_TANK_TRIGGER):
             return
-        self._state["device_state"] = "running"
-        self._publish_hw(device_activity="running", shower_user_id=person_id)
-        yield self.env.timeout(15.0)
-        level = float(self._state.get("hot_water_available", 1.0))
-        self._state["hot_water_available"] = max(0.0, level - cost)
-        self._state["device_state"] = "idle"
-        pct = int(round(100.0 * float(self._state["hot_water_available"])))
-        self._publish_hw(
-            device_activity="idle",
-            notify_feed=True,
-            feed_suffix=f"done · {person_id} · tank {pct}%",
-            shower_user_id=None,
-        )
+        if self._last_carbon >= float(config.CARBON_HIGH_THRESHOLD):
+            self._maybe_emit_auto_preheat_block()
+            return
+        self.env.process(self._preheat_ramp("auto", source_auto=True))
+
+    def _preheat_ramp(self, tag: str, *, source_auto: bool):
+        if self._preheat_busy:
+            if not source_auto:
+                self._water_notice(f"Preheat held ({tag}) — ramp already running.")
+            return
+        cap = float(config.CARBON_HIGH_THRESHOLD)
+        if self._last_carbon >= cap:
+            if source_auto:
+                self._maybe_emit_auto_preheat_block()
+            else:
+                self._water_notice(
+                    f"Preheat not started ({tag}) — grid {int(self._last_carbon)} gCO2/kWh, cap {int(cap)}."
+                )
+            return
+        if self._state.get("device_state") != "idle":
+            if not source_auto:
+                self._water_notice(f"Preheat not started ({tag}) — unit busy (shower or fault).")
+            return
+        target = float(config.FUSED_AUTO_PREHEAT_TANK_TARGET)
+        if float(self._state.get("hot_water_available", 0.0)) >= target - 1e-9:
+            if not source_auto:
+                pct = int(round(100.0 * target))
+                self._water_notice(f"Preheat not needed ({tag}) — tank already at or above ~{pct}%.")
+            return
+        self._preheat_busy = True
+        try:
+            self._water_notice(f"Preheat on ({tag}).")
+            self._publish_hw(device_activity="preheating", notify_feed=False)
+            step = 3.0
+            rate = float(config.FUSED_AUTO_PREHEAT_FILL_PER_MINUTE)
+            while float(self._state.get("hot_water_available", 0.0)) < target:
+                if self._state.get("device_state") != "idle":
+                    self._water_notice(f"Preheat cut ({tag}) — unit busy.")
+                    return
+                yield self.env.timeout(step)
+                if self._state.get("device_state") != "idle":
+                    self._water_notice(f"Preheat cut ({tag}) — unit busy.")
+                    return
+                if self._last_carbon >= cap:
+                    self._water_notice(f"Preheat stopped ({tag}) — carbon over {int(cap)}.")
+                    return
+                cur = float(self._state.get("hot_water_available", 0.0))
+                self._state["hot_water_available"] = min(1.0, cur + rate * step)
+                self._publish_hw(
+                    device_activity="preheating",
+                    notify_feed=source_auto,
+                    feed_suffix=f"preheat · {tag}" if source_auto else "",
+                )
+            self._water_notice(f"Preheat done ({tag}).")
+        finally:
+            self._preheat_busy = False
+            self._publish_hw(device_activity="idle")
+
+    def _preheat_for_person(self, person_id: str):
+        yield from self._preheat_ramp(person_id, source_auto=False)
+
+    def _fused_auto_preheat_poll(self):
+        while True:
+            yield self.env.timeout(float(config.FUSED_AUTO_PREHEAT_POLL_MINUTES))
+            self._try_fused_auto_preheat_if_eligible()
 
     def run(self):
+        if self._scenario_name == "fused":
+            self.env.process(self._fused_auto_preheat_poll())
+            self.env.process(self._fused_demo_shower_negotiations())
         while True:
             deadline = self.env.now + 1.0
             while self.env.now < deadline:

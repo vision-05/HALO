@@ -1,5 +1,10 @@
 """Human-in-the-loop bridge: queue → SimPy thread → MessageBus (never from HTTP/stdin thread).
 
+Stdin (``spawn_stdin_command_thread``): ``send-counter <value> <nid> [device_id] [attribute]``,
+``send-accept <nid> [device_id] [attribute]``, ``send-reject <nid> [device_id] [reason]``.
+Omit optional fields for thermostat ``temperature``; for shower use e.g.
+``send-counter 12 <nid> device_shower shower_minutes``.
+
 Contract for queue items (each is a ``dict``):
 
 - ``{"op": "set_pref", "value": <float>}`` — update ``person_cli`` preferred temperature and broadcast
@@ -12,23 +17,26 @@ Contract for queue items (each is a ``dict``):
 - ``{"op": "simulate_sleep"}`` — broadcast ``SleepNotice`` and record evening meal when meal context is active
   (see ``CliPersonAgent.simulate_sleep``).
 
+- ``{"op": "request_shower"}`` / ``{"op": "request_preheat"}`` — send ``WaterShowerIntent`` / ``WaterPreheatIntent``
+  to ``device_shower`` as ``person_cli`` (fused / scenarios with that agent).
+
 - ``{"op": "leave"}`` / ``{"op": "return"}`` — same presence side-effects as ``PersonAgent`` (state + notice).
   For ``CliPersonAgent`` (default **manual_schedule**) there is **no scripted** wake / leave /
   return / sleep clock — inject these (and ``set_pref``) when **you** want the human to move or
   re-declare comfort.
 
-- ``{"op": "send_counter", "value": <float>, "negotiation_id": "<uuid>"}`` — send ``NegotiationCounter`` from
-  ``person_cli`` to ``device_thermostat`` (must match an active proposal).
+- ``{"op": "send_counter", "value": <float>, "negotiation_id": "<uuid>", "device_id": "device_shower"?, "attribute": "shower_minutes"?}`` —
+  send ``NegotiationCounter`` from ``person_cli`` (default target ``device_thermostat`` / ``temperature``; optional fields route to shower duration negotiation).
+- ``{"op": "send_accept", "negotiation_id": "<uuid>", "device_id": "device_shower"?, "attribute": "shower_minutes"?}`` — send ``NegotiationAccept``.
 
-- ``{"op": "send_accept", "negotiation_id": "<uuid>"}`` — send ``NegotiationAccept``.
-
-- ``{"op": "send_reject", "negotiation_id": "<uuid>", "reason": "..." }`` — optional reason; default
-  ``below_min_safe`` only if you mirror device min checks externally.
+- ``{"op": "send_reject", "negotiation_id": "<uuid>", "reason": "..."?, "device_id": "device_shower"? }`` —
+  optional ``device_id`` routes to the shower agent when rejecting a shower negotiation.
 
 Allowed ``MessageTypes`` strings for *injected* messages (must match ``negotiation.message.MessageTypes``):
 
 - ``PreferenceDeclaration``, ``DepartureNotice``, ``ArrivalNotice``, ``SleepNotice`` (person → broadcast)
-- ``NegotiationAccept``, ``NegotiationCounter``, ``NegotiationReject`` (person → ``device_thermostat``)
+- ``NegotiationAccept``, ``NegotiationCounter``, ``NegotiationReject`` (``person_cli`` → ``device_thermostat`` or ``device_shower``)
+- ``WaterShowerIntent``, ``WaterPreheatIntent`` (``person_cli`` → ``device_shower``; from ``request_*`` queue ops)
 
 Stable advocator id: ``person_cli``. Thermostat id in ``cli_bridge`` scenario: ``device_thermostat``.
 """
@@ -50,6 +58,7 @@ logger = logging.getLogger(__name__)
 
 CLI_PERSON_ID = "person_cli"
 THERMOSTAT_ID = "device_thermostat"
+SHOWER_ID = "device_shower"
 
 
 def status_snapshot(cli: CliPersonAgent) -> dict[str, Any]:
@@ -63,7 +72,7 @@ def status_snapshot(cli: CliPersonAgent) -> dict[str, Any]:
     }
 
 # Wall-clock-ish responsiveness: poll queue every this many *simulated* minutes.
-DEFAULT_INJECTOR_POLL_SIM_MINUTES = 0.25
+DEFAULT_INJECTOR_POLL_SIM_MINUTES = 0.05
 
 
 def validate_queue_item(item: dict[str, Any]) -> dict[str, Any] | None:
@@ -81,27 +90,40 @@ def validate_queue_item(item: dict[str, Any]) -> dict[str, Any] | None:
         return {"op": op}
     if op == "send_counter":
         try:
-            return {
+            out: dict[str, Any] = {
                 "op": "send_counter",
                 "value": float(item["value"]),
                 "negotiation_id": str(item["negotiation_id"]),
             }
         except (KeyError, TypeError, ValueError):
             return None
+        if item.get("device_id") is not None:
+            out["device_id"] = str(item["device_id"])
+        if item.get("attribute") is not None:
+            out["attribute"] = str(item["attribute"])
+        return out
     if op == "send_accept":
         try:
-            return {"op": "send_accept", "negotiation_id": str(item["negotiation_id"])}
+            out = {"op": "send_accept", "negotiation_id": str(item["negotiation_id"])}
         except (KeyError, TypeError, ValueError):
             return None
+        if item.get("device_id") is not None:
+            out["device_id"] = str(item["device_id"])
+        if item.get("attribute") is not None:
+            out["attribute"] = str(item["attribute"])
+        return out
     if op == "send_reject":
         try:
-            return {
+            out = {
                 "op": "send_reject",
                 "negotiation_id": str(item["negotiation_id"]),
                 "reason": str(item.get("reason", "user_reject")),
             }
         except (KeyError, TypeError, ValueError):
             return None
+        if item.get("device_id") is not None:
+            out["device_id"] = str(item["device_id"])
+        return out
     if op == "simulate_sleep":
         return {"op": "simulate_sleep"}
     if op == "set_favorite_meals":
@@ -114,6 +136,8 @@ def validate_queue_item(item: dict[str, Any]) -> dict[str, Any] | None:
         return {"op": "set_favorite_meals", "meals": meals}
     if op == "__status__":
         return {"op": "__status__"}
+    if op in ("request_shower", "request_preheat"):
+        return {"op": op}
     return None
 
 
@@ -183,37 +207,58 @@ class BridgeInjector:
         elif op == "return":
             self._cli.simulate_return()
         elif op == "send_counter":
+            dev = str(item.get("device_id", THERMOSTAT_ID))
+            attr = str(
+                item.get("attribute", "temperature" if dev == THERMOSTAT_ID else "shower_minutes")
+            )
             self._send_negotiation(
                 MessageTypes.NegotiationCounter,
                 {
                     "negotiation_id": item["negotiation_id"],
                     "counter_value": float(item["value"]),
-                    "device_id": THERMOSTAT_ID,
-                    "attribute": "temperature",
+                    "device_id": dev,
+                    "attribute": attr,
                 },
             )
         elif op == "send_accept":
-            self._send_negotiation(
-                MessageTypes.NegotiationAccept,
-                {
-                    "negotiation_id": item["negotiation_id"],
-                    "device_id": THERMOSTAT_ID,
-                },
-            )
+            dev = str(item.get("device_id", THERMOSTAT_ID))
+            pl: dict[str, Any] = {
+                "negotiation_id": item["negotiation_id"],
+                "device_id": dev,
+            }
+            if item.get("attribute") is not None:
+                pl["attribute"] = str(item["attribute"])
+            self._send_negotiation(MessageTypes.NegotiationAccept, pl)
         elif op == "send_reject":
+            dev = str(item.get("device_id", THERMOSTAT_ID))
             self._send_negotiation(
                 MessageTypes.NegotiationReject,
                 {
                     "negotiation_id": item["negotiation_id"],
                     "reason": item.get("reason", "user_reject"),
-                    "device_id": THERMOSTAT_ID,
+                    "device_id": dev,
                 },
             )
+        elif op == "request_shower":
+            self._to_shower(MessageTypes.WaterShowerIntent)
+        elif op == "request_preheat":
+            self._to_shower(MessageTypes.WaterPreheatIntent)
 
-    def _send_negotiation(self, msg_type: str, payload: dict[str, Any]) -> None:
+    def _to_shower(self, msg_type: str) -> None:
         m = Message.create(
             CLI_PERSON_ID,
-            THERMOSTAT_ID,
+            SHOWER_ID,
+            msg_type,
+            {"initiator": CLI_PERSON_ID},
+            self.env.now,
+        )
+        self.bus.send(m)
+
+    def _send_negotiation(self, msg_type: str, payload: dict[str, Any]) -> None:
+        dev = str(payload.get("device_id", THERMOSTAT_ID))
+        m = Message.create(
+            CLI_PERSON_ID,
+            dev,
             msg_type,
             payload,
             self.env.now,
@@ -250,14 +295,35 @@ def spawn_stdin_command_thread(
                 if cmd == "set-pref" and len(parts) >= 2:
                     inbound.put({"op": "set_pref", "value": float(parts[1])})
                 elif cmd == "send-counter" and len(parts) >= 3:
-                    inbound.put(
-                        {"op": "send_counter", "value": float(parts[1]), "negotiation_id": parts[2]}
-                    )
+                    d: dict[str, Any] = {
+                        "op": "send_counter",
+                        "value": float(parts[1]),
+                        "negotiation_id": parts[2],
+                    }
+                    if len(parts) >= 4:
+                        d["device_id"] = parts[3]
+                    if len(parts) >= 5:
+                        d["attribute"] = parts[4]
+                    inbound.put(d)
                 elif cmd == "send-accept" and len(parts) >= 2:
-                    inbound.put({"op": "send_accept", "negotiation_id": parts[1]})
+                    d = {"op": "send_accept", "negotiation_id": parts[1]}
+                    if len(parts) >= 3:
+                        d["device_id"] = parts[2]
+                    if len(parts) >= 4:
+                        d["attribute"] = parts[3]
+                    inbound.put(d)
                 elif cmd == "send-reject" and len(parts) >= 2:
-                    reason = parts[2] if len(parts) >= 3 else "user_reject"
-                    inbound.put({"op": "send_reject", "negotiation_id": parts[1], "reason": reason})
+                    d: dict[str, Any] = {"op": "send_reject", "negotiation_id": parts[1]}
+                    if len(parts) >= 3:
+                        p2 = parts[2]
+                        if p2 in ("device_thermostat", "device_shower"):
+                            d["device_id"] = p2
+                            d["reason"] = parts[3] if len(parts) >= 4 else "user_reject"
+                        else:
+                            d["reason"] = p2
+                    else:
+                        d["reason"] = "user_reject"
+                    inbound.put(d)
                 elif cmd == "leave":
                     inbound.put({"op": "leave"})
                 elif cmd == "return":
@@ -283,6 +349,10 @@ def spawn_stdin_command_thread(
                             print("set-favorite-meals: need at least one dish name")
                 elif cmd in ("simulate-sleep", "sleep"):
                     inbound.put({"op": "simulate_sleep"})
+                elif cmd == "shower":
+                    inbound.put({"op": "request_shower"})
+                elif cmd == "preheat":
+                    inbound.put({"op": "request_preheat"})
                 elif cmd == "status":
                     if status_reply is None:
                         print("status: not available")
@@ -295,8 +365,8 @@ def spawn_stdin_command_thread(
                             print("status: timeout (sim may not be running yet)")
                 else:
                     print(
-                        "Unknown command. Try: set-pref, set-favorite-meals, simulate-sleep, "
-                        "send-counter, send-accept, send-reject, leave, return, status, quit"
+                        "Unknown command. Try: set-pref, set-favorite-meals, simulate-sleep, shower, "
+                        "preheat, send-counter, send-accept, send-reject, leave, return, status, quit"
                     )
             except (IndexError, ValueError) as e:
                 print(f"Bad arguments: {e}")

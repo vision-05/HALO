@@ -12,6 +12,8 @@ def test_validate_queue_item() -> None:
     assert validate_queue_item({"op": "set_pref", "value": 21.5}) == {"op": "set_pref", "value": 21.5}
     assert validate_queue_item({"op": "leave"}) == {"op": "leave"}
     assert validate_queue_item({"op": "send_counter", "value": 20.0, "negotiation_id": "abc"}) is not None
+    assert validate_queue_item({"op": "request_shower"}) == {"op": "request_shower"}
+    assert validate_queue_item({"op": "request_preheat"}) == {"op": "request_preheat"}
     assert validate_queue_item({"op": "nope"}) is None
 
 

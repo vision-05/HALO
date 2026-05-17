@@ -18,12 +18,18 @@ DEMO_WALL_SECONDS_MAX = 7200.0
 # Negotiation
 MAX_ITERATIONS = 10
 CONVERGENCE_THRESHOLD = 0.5
-NEGOTIATION_TIMEOUT = 5  # simulated minutes
+NEGOTIATION_TIMEOUT = 2  # simulated minutes (auto rounds only; HITL uses indefinite wait when applicable)
 FALLBACK_TO_UNWEIGHTED_AVERAGE = True
+# Human-in-the-loop: if any of these agent ids are in a negotiation round *and* still marked at home
+# in the device's preference snapshot, the device waits for inbox replies only (no sim-minute deadline).
+NEGOTIATION_INDEFINITE_WAIT_AGENT_IDS: tuple[str, ...] = ("person_cli",)
 
 # Agent weights
 DEFAULT_COMFORT_WEIGHT = 0.8
 AWAY_COMFORT_WEIGHT = 0.2
+# Applied as ``comfort_weight * (1.0 if home else PRESENCE_MULTIPLIER_AWAY)`` in ``effective_person_weight``.
+# Use 0 so away occupants do not pull the weighted comfort target toward their last declared °C (device term still applies).
+PRESENCE_MULTIPLIER_AWAY = 0.0
 DEFAULT_DEVICE_WEIGHT = 0.4
 CARBON_HIGH_THRESHOLD = 250  # gCO2/kWh
 CARBON_WEIGHT_BOOST = 0.3
@@ -39,6 +45,11 @@ BAYESIAN_PRIOR_SIGMA = 3.0
 # Devices
 THERMOSTAT_MIN = 14.0
 THERMOSTAT_MAX = 28.0
+# Shower duration negotiation (simulated minutes); weighted_proposal uses these clip bounds.
+SHOWER_DURATION_MIN_MINUTES = 5.0
+SHOWER_DURATION_MAX_MINUTES = 25.0
+SHOWER_DEVICE_OPTIMAL_MINUTES = 10.0
+SHOWER_MINUTES_TOLERANCE = 2.0
 TEMPERATURE_TOLERANCE = 1.5  # °C
 DEFAULT_FAILURE_PROBABILITY = 0.001
 FAILURE_RECOVERY_TIMEOUT = 30  # simulated minutes
@@ -95,6 +106,15 @@ DISHWASHER_LOW_CARBON_AFTER_MINUTE = 22 * 60
 HOT_WATER_DRAIN_PER_SHOWER = 0.35
 HOT_WATER_RECHARGE_PER_MINUTE_BASE = 0.009
 HOT_WATER_RECHARGE_GRID_CLEAN_MULTIPLIER = 2.0
+
+# Fused: auto preheat when tank is low and grid carbon is below CARBON_HIGH_THRESHOLD.
+# The shower agent also tries this immediately after a shower ends (tank often drops below trigger),
+# in addition to the periodic poll below.
+FUSED_AUTO_PREHEAT_POLL_MINUTES = 22.0
+FUSED_AUTO_PREHEAT_TANK_TRIGGER = 0.48
+FUSED_AUTO_PREHEAT_TANK_TARGET = 0.88
+FUSED_AUTO_PREHEAT_FILL_PER_MINUTE = 0.045
+FUSED_AUTO_PREHEAT_BLOCK_NOTICE_COOLDOWN_MIN = 55.0
 
 # Negotiation device longevity pull (small bias toward device optimal operating point)
 DEVICE_LONGEVITY_PULL = 0.05

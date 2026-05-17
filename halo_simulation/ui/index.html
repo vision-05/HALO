@@ -122,8 +122,17 @@
     .dw-rect.dw-active { filter: drop-shadow(0 0 8px rgba(56, 139, 253, 0.55)); }
     .dw-rect.dw-scheduled { filter: drop-shadow(0 0 6px rgba(210, 153, 34, 0.45)); }
     .light-dot { stroke: #21262d; stroke-width: 1; transition: fill 0.3s ease; }
-    #showerIcon { transition: opacity 0.35s ease, filter 0.35s ease; }
-    #showerIcon.shower-pulse { filter: drop-shadow(0 0 7px rgba(88, 166, 255, 0.5)); }
+    #showerIcon { transition: opacity 0.35s ease, filter 0.35s ease, fill 0.35s ease; }
+    #showerIcon.shower-pulse { filter: drop-shadow(0 0 7px rgba(88, 166, 255, 0.55)); }
+    #showerIcon.shower-preheat {
+      fill: #ffa657 !important;
+      filter: drop-shadow(0 0 9px rgba(255, 166, 87, 0.75));
+      animation: showerPreheatGlow 1.1s ease-in-out infinite alternate;
+    }
+    @keyframes showerPreheatGlow {
+      from { filter: drop-shadow(0 0 5px rgba(255, 166, 87, 0.45)); }
+      to { filter: drop-shadow(0 0 12px rgba(255, 166, 87, 0.95)); }
+    }
     .person-dot { stroke: #fff; stroke-width: 2; }
     /* Smooth floor-plan movement (Bob / CLI or Alice); avoid rebuilding SVG every tick. */
     #floorWrap svg .person-figure {
@@ -208,7 +217,7 @@
       visibility: hidden;
     }
     .chart-box.shower-strip {
-      height: 160px;
+      height: 208px;
       display: none;
     }
     .chart-box.shower-strip.visible { display: flex; flex-direction: column; }
@@ -248,7 +257,46 @@
     .weather-mode-pill.sim-grow { color: var(--accent); border-color: #388bfd44; background: #388bfd12; }
     .chart-box.chart-thermostat,
     .chart-box.chart-shower { display: flex; flex-direction: column; min-height: 0; }
+    .chart-box.chart-shower .chart-shower-canvas-wrap {
+      flex: 1 1 auto;
+      min-height: 0;
+      position: relative;
+      width: 100%;
+    }
     .chart-box.chart-weather { display: flex; flex-direction: column; min-height: 0; }
+    .chart-shower-canvas-wrap canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    #showerDiagramState {
+      display: none;
+      position: absolute;
+      top: 0.28rem;
+      right: 0.35rem;
+      z-index: 3;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.22rem 0.45rem;
+      border-radius: 4px;
+      border: 1px solid #30363d;
+      pointer-events: none;
+      max-width: 58%;
+      text-align: right;
+      line-height: 1.2;
+    }
+    #showerDiagramState.preheat {
+      color: #ffa657;
+      border-color: #ffa65766;
+      background: rgba(255, 166, 87, 0.12);
+    }
+    #showerDiagramState.running {
+      color: #79c0ff;
+      border-color: #58a6ff55;
+      background: rgba(88, 166, 255, 0.1);
+    }
     .chart-box > canvas {
       flex: 1 1 auto;
       min-height: 0;
@@ -256,7 +304,7 @@
       z-index: 2;
     }
     body.compact-layout .chart-box:not(.weather):not(#chartShowerWrap) { height: 168px; }
-    body.compact-layout #chartShowerWrap.chart-box.shower-strip.visible { height: 132px !important; }
+    body.compact-layout #chartShowerWrap.chart-box.shower-strip.visible { height: 168px !important; }
     body.compact-layout .chart-box.weather { height: 240px !important; min-height: 240px !important; }
     body.compact-layout #floorWrap svg { max-height: 52vh !important; }
     .chart-box.weather .weather-chart-wrap {
@@ -495,6 +543,43 @@
       background: #f8514914;
       white-space: normal;
     }
+    #injectNegotiationAwait {
+      display: none;
+      width: 100%;
+      margin: 0 0 0.35rem;
+      padding: 0.35rem 0.45rem;
+      font-size: 0.62rem;
+      line-height: 1.32;
+      color: #e6edf3;
+      background: #1f3d2f;
+      border: 1px solid #23863688;
+      border-radius: 4px;
+    }
+    #injectNegotiationAwait strong {
+      color: #7ee787;
+    }
+    #injectThermostatCard.hi-negotiation-pending {
+      border-color: #23863699;
+      box-shadow: 0 0 0 1px #23863644 inset;
+    }
+    #injectNegotiationActions.negotiation-actions-highlight .hi-btn {
+      border-color: #58a6ff !important;
+      box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.35);
+    }
+    #injectNegotiationActions.negotiation-actions-highlight .hi-btn-primary {
+      background: #388bfd;
+      filter: brightness(1.08);
+    }
+    #injectNegotiationActions.negotiation-actions-highlight .hi-btn-secondary {
+      color: #e6edf3;
+      background: #21262d;
+      border-color: #58a6ff;
+    }
+    #injectNegotiationActions.negotiation-actions-highlight .hi-btn-ghost {
+      color: #c9d1d9;
+      border-color: #484f58;
+      background: #161b22;
+    }
   </style>
 </head>
 <body>
@@ -511,8 +596,8 @@
     </label>
     <label>Days <input type="number" id="days" value="2" min="1" max="365" style="width:4rem" /></label>
     <label>Seed <input type="number" id="seed" value="42" style="width:5rem" /></label>
-    <label title="Wall-clock seconds to stretch the entire simulated run (0 = run at full CPU speed). Use ~60 for human-in-the-loop demos.">Pace (s)
-      <input type="number" id="demoWallSeconds" value="60" min="0" max="7200" step="1" style="width:3.5rem" />
+    <label title="Wall-clock seconds to stretch the entire simulated run (0 = run at full CPU speed, default). Use ~60 for human-in-the-loop demos so inject stays easy to follow.">Pace (s)
+      <input type="number" id="demoWallSeconds" value="0" min="0" max="7200" step="1" style="width:3.5rem" />
     </label>
     <span class="live-row">
       <label style="display:inline-flex;align-items:center;gap:0.35rem;cursor:pointer;">
@@ -528,7 +613,7 @@
     <button type="button" id="stop">Stop</button>
     <span id="simTime">Sim: —:—</span>
     <span id="runStatus" title=""></span>
-    <span id="speedNote">Pace &gt;0 slows the worker thread between chunks (good for demos). Set 0 for max speed.</span>
+    <span id="speedNote">Pace <strong>0</strong> = max speed (default). Pace &gt;0 slows the worker between chunks (good for narrated HITL demos).</span>
     <label title="Shorter charts, more room for floor + feed" style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.75rem;color:var(--muted);cursor:pointer;">
       <input type="checkbox" id="compactLayoutToggle" />
       Compact layout
@@ -559,23 +644,37 @@
           </div>
         </div>
       </div>
-      <div class="hi-card">
+      <div class="hi-card" id="injectThermostatCard">
         <div class="hi-card-title">Thermostat negotiation</div>
         <div class="hi-card-body">
+          <div id="injectNegotiationAwait" role="status" style="display: none" aria-hidden="true">
+            <strong>Action needed (You · person_cli)</strong> — Id and counter pre-fill from the proposal.
+            <strong>Accept</strong>, <strong>Counter</strong> (edit first), or <strong>Reject</strong> (optional). No sim-time cutoff until you send.
+          </div>
           <div class="hi-nid-row">
             <div class="hi-field">
               <label for="injectNid">Negotiation id</label>
               <input type="text" id="injectNid" placeholder="UUID / nid …" autocomplete="off" spellcheck="false" />
             </div>
-            <button type="button" id="injectFillNid" class="hi-btn hi-btn-secondary" title="Fill from last proposal to person_cli">Last nid</button>
+            <button type="button" id="injectFillNid" class="hi-btn hi-btn-secondary" title="Re-fill id from last proposal (usually automatic)">Last nid</button>
           </div>
-          <div class="hi-field-row">
+          <div id="injectNegotiationActions" class="hi-field-row">
             <div class="hi-field">
-              <label for="injectCounterVal">Counter °C</label>
+              <label id="injectCounterDimLabel" for="injectCounterVal">Counter °C</label>
               <input type="number" id="injectCounterVal" step="0.5" min="14" max="28" value="20.5" />
             </div>
             <button type="button" id="injectCounter" class="hi-btn hi-btn-primary">Counter</button>
             <button type="button" id="injectAccept" class="hi-btn hi-btn-secondary">Accept</button>
+            <button type="button" id="injectReject" class="hi-btn hi-btn-ghost">Reject</button>
+          </div>
+        </div>
+      </div>
+      <div class="hi-card" id="injectShowerCard" style="display:none">
+        <div class="hi-card-title">Hot water</div>
+        <div class="hi-card-body">
+          <div class="hi-field-row">
+            <button type="button" id="injectShower" class="hi-btn hi-btn-secondary">Shower</button>
+            <button type="button" id="injectPreheat" class="hi-btn hi-btn-secondary">Preheat</button>
           </div>
         </div>
       </div>
@@ -586,9 +685,10 @@
         <li>Start the API: <code style="user-select:all">PYTHONPATH=. uvicorn halo_simulation.server:app --reload</code> (single worker so stream and inject share one process).</li>
         <li>Open this page from that server (e.g. <code>http://127.0.0.1:8000</code>) or set <code>&lt;meta name="halo-api-origin" content="http://127.0.0.1:8000"&gt;</code> if the UI is in a preview tab.</li>
         <li>Scenario <strong>CLI Human Bridge</strong> or <strong>Fused (full demo)</strong> → <strong>Run</strong>. Wait until <strong>Sim:</strong> shows a time (not —:—).</li>
-        <li><strong>Apply / Leave / Return</strong> while the stream is open. <strong>Counter / Accept</strong> need an id — after <strong>NegotiationProposal → person_cli</strong> appears, click <strong>Last nid</strong> or copy <code>nid …</code> from the feed.</li>
+        <li><strong>Apply / Leave / Return</strong> while the stream is open. When <strong>NegotiationProposal → person_cli</strong> arrives, the <strong>Thermostat negotiation</strong> card shows a short green hint, fills the negotiation id, highlights <strong>Accept / Counter / Reject</strong>, and pre-fills the counter field. After you send one of those, the hint and highlights clear. Another round may prompt again.</li>
+        <li>Shower proposals use <strong>minutes</strong> (feed shows <code>shower_minutes</code>; You card shows “shower negotiation”). With <strong>Fused</strong>, <strong>Shower</strong> / <strong>Preheat</strong> hit the tank path; after a shower, <strong>auto preheat</strong> may start if the tank is low and carbon is under the cap.</li>
         <li>If Sim: still moves but inject says the stream is gone, the run already finished and the UI is draining the last buffered events — click <strong>Run</strong> again.</li>
-        <li><strong>Human-in-the-loop:</strong> use <strong>1–2 Days</strong> and keep <strong>Pace (s)</strong> at <strong>~60</strong> so the run lasts about a minute wall-clock (inject stays open long enough to react). Set Pace to <strong>0</strong> for full-speed batch runs.</li>
+        <li><strong>Human-in-the-loop:</strong> use <strong>1–2 Days</strong>. Default <strong>Pace 0</strong> is fastest; set <strong>Pace ~60</strong> if you want the run to last about a minute wall-clock so inject is easier to follow (the sim thread sleeps between chunks, so higher Pace also delays inject handling).</li>
       </ol>
     </details>
   </div>
@@ -614,7 +714,10 @@
       </div>
       <div id="chartShowerWrap" class="chart-box shower-strip chart-shower">
         <div id="chartShowerEmpty" class="chart-empty-msg hidden">No shower tank samples yet — they appear during the run.</div>
-        <canvas id="chartShower"></canvas>
+        <div class="chart-shower-canvas-wrap">
+          <div id="showerDiagramState" class="shower-diagram-state" aria-live="polite" hidden></div>
+          <canvas id="chartShower"></canvas>
+        </div>
       </div>
       <div class="chart-box weather chart-weather">
         <div class="weather-chart-head">
@@ -636,6 +739,9 @@
           <span id="reasoning-chevron">▾</span>
         </div>
         <div id="reasoning-panel" data-collapsed="0" style="padding: 0 16px; max-height: 300px; overflow-y: auto;">
+          <p style="margin:0;padding:8px 0 0;font-size:11px;color:var(--muted);">
+            Full context + effect hints: open <a href="/llm-inspector" target="_blank" rel="noopener">/llm-inspector</a> or <code>GET /api/llm-inspector</code> while this stream runs.
+          </p>
           <div id="reasoning-feed"></div>
           <p id="reasoning-empty" style="color: var(--muted); font-size: 13px; padding: 12px 0;">
             Waiting for first reasoning cycle (every 60 sim minutes)...
@@ -688,6 +794,8 @@
     }
 
     const MIN_PER_DAY = 1440;
+    const SHOWER_CHART_PREHEAT_Y = 10;
+    const SHOWER_CHART_RUNNING_Y = 22;
     const HALO_CHART_FONT = 'system-ui, "Segoe UI", Roboto, sans-serif';
 
     function haloChartCssVar(name, fallback) {
@@ -805,6 +913,18 @@
         .replace(/"/g, '&quot;');
     }
 
+    /** Registry `api_id` → short UI label (ids like `severe_weather` are integration names, not forecast headlines). */
+    const LLM_API_LABELS = {
+      severe_weather: 'Hourly forecast · Open-Meteo (London)',
+      grocery_prices: 'Grocery search · Open Food Facts',
+      news_disruptions: 'News · disruption search',
+      fuel_prices: 'Fuel prices (probe)',
+    };
+    function llmApiDisplayLabel(apiId) {
+      const id = String(apiId || '').trim();
+      return LLM_API_LABELS[id] || id;
+    }
+
     function addReasoningEntry(d) {
       const empty = document.getElementById('reasoning-empty');
       const panel = document.getElementById('reasoning-feed');
@@ -817,9 +937,33 @@
       const relevantColor = d.relevant ? '#22c55e' : '#9ca3af';
       const apiLabel =
         d.api_id && d.api_id !== 'none'
-          ? `<span style="background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:4px;font-size:11px;">${reasoningEscapeHtml(
-              d.api_id,
+          ? `<span style="background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:4px;font-size:11px;" title="api_id: ${reasoningEscapeHtml(String(d.api_id))}">${reasoningEscapeHtml(
+              llmApiDisplayLabel(d.api_id),
             )}</span>`
+          : '';
+      const hints = Array.isArray(d.pending_effect_hints)
+        ? d.pending_effect_hints
+            .map(
+              (h) =>
+                `<li style="font-size:11px;color:var(--muted);margin:2px 0;"><code>${reasoningEscapeHtml(String(h.api_id || ''))}</code> → <code>${reasoningEscapeHtml(String(h.halo_message_type || ''))}</code>: ${reasoningEscapeHtml(String(h.effect_summary || ''))}</li>`,
+            )
+            .join('')
+        : '';
+      const effectLine =
+        d.sim_effect != null && String(d.sim_effect).trim() !== ''
+          ? `<div style="margin-top:6px;padding:6px 8px;background:#161b22;border-radius:4px;border:0.5px solid #30363d;font-size:11px;line-height:1.35;"><strong style="color:#79c0ff;">Outcome</strong> — ${reasoningEscapeHtml(String(d.sim_effect))}</div>`
+          : '';
+      const ctx = Array.isArray(d.context_snapshot) ? d.context_snapshot : [];
+      const ctxBlock =
+        ctx.length > 0
+          ? `<details style="margin-top:6px;"><summary style="cursor:pointer;color:var(--accent);font-size:11px;">Context (${ctx.length})</summary><pre style="margin:6px 0 0;padding:6px;background:#0d1117;border-radius:4px;font-size:10px;overflow:auto;max-height:160px;border:0.5px solid #30363d;">${reasoningEscapeHtml(
+              ctx
+                .map(
+                  (c) =>
+                    `[${c.sim_time_str || ''}] ${c.msg_type || ''} (${c.sender || ''}) — ${c.summary || ''}`,
+                )
+                .join('\n'),
+            )}</pre></details>`
           : '';
       entry.innerHTML = `
         <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
@@ -828,6 +972,9 @@
         </div>
         <div style="margin-bottom:2px;">${reasoningEscapeHtml(String(d.reason || ''))}</div>
         <div>${apiLabel}</div>
+        ${hints ? `<ul style="margin:4px 0 0 1rem;padding:0;">${hints}</ul>` : ''}
+        ${effectLine}
+        ${ctxBlock}
       `;
       panel.insertBefore(entry, panel.firstChild);
       while (panel.children.length > 20) panel.removeChild(panel.lastChild);
@@ -863,11 +1010,16 @@
         </div>
         <div style="margin-bottom:4px;">
           <span style="background:#21262d;color:#79c0ff;padding:2px 6px;border-radius:4px;font-size:11px;">${reasoningEscapeHtml(String(d.msg_type || ''))}</span>
-          <span style="color:var(--muted);font-size:11px;margin-left:6px;">${reasoningEscapeHtml(String(d.api_id || ''))}</span>
+          <span style="color:var(--muted);font-size:11px;margin-left:6px;" title="api_id: ${reasoningEscapeHtml(String(d.api_id || ''))}">${reasoningEscapeHtml(llmApiDisplayLabel(d.api_id))}</span>
         </div>
         <div style="padding:8px;border-radius:6px;border:0.5px solid ${colors.border};background:${colors.bg};color:${colors.text};font-size:12px;line-height:1.35;">
           ${reasoningEscapeHtml(String(d.summary || ''))}
         </div>
+        ${
+          d.sim_effect != null && String(d.sim_effect).trim() !== ''
+            ? `<div style="margin-top:6px;padding:6px 8px;background:#161b22;border-radius:4px;border:0.5px solid #30363d;font-size:11px;line-height:1.35;color:#e6edf3;"><strong style="color:#79c0ff;">Outcome</strong> — ${reasoningEscapeHtml(String(d.sim_effect))}</div>`
+            : ''
+        }
       `;
       panel.insertBefore(entry, panel.firstChild);
       while (panel.children.length > 35) panel.removeChild(panel.lastChild);
@@ -889,12 +1041,17 @@
       row.innerHTML = `
         <div style="color:var(--muted);margin-bottom:3px;">${reasoningEscapeHtml(d.sim_time_str || '')} · <strong>External API</strong></div>
         <div>
-          <span style="font-weight:600;">${reasoningEscapeHtml(String(d.api_id || ''))}</span>
+          <span style="font-weight:600;" title="api_id: ${reasoningEscapeHtml(String(d.api_id || ''))}">${reasoningEscapeHtml(llmApiDisplayLabel(d.api_id))}</span>
           ${ok ? '<span style="color:#3fb950;margin-left:6px;">success</span>' : '<span style="color:#f85149;margin-left:6px;">failed</span>'}
           ${d.latency_ms != null ? `<span style="color:var(--muted);margin-left:8px;">${reasoningEscapeHtml(String(d.latency_ms))} ms</span>` : ''}
         </div>
         <div style="margin-top:3px;color:#c9d1d9;">${reasoningEscapeHtml(String(d.observation_summary || ''))}</div>
         ${haloMt}
+        ${
+          d.sim_effect != null && String(d.sim_effect).trim() !== ''
+            ? `<div style="margin-top:6px;padding:6px 8px;background:#161b22;border-radius:4px;border:0.5px solid #30363d;font-size:11px;line-height:1.35;color:#e6edf3;"><strong style="color:#79c0ff;">Outcome</strong> — ${reasoningEscapeHtml(String(d.sim_effect))}</div>`
+            : ''
+        }
       `;
       panel.insertBefore(row, panel.firstChild);
       while (panel.children.length > 35) panel.removeChild(panel.lastChild);
@@ -915,7 +1072,12 @@
         reasoningEscapeHtml(String(d.phase || 'error')) +
         '</div><div>' +
         reasoningEscapeHtml(String(d.message || '')) +
-        '</div>';
+        '</div>' +
+        (d.sim_effect != null && String(d.sim_effect).trim() !== ''
+          ? '<div style="margin-top:6px;padding:6px 8px;background:#161b22;border-radius:4px;border:0.5px solid #30363d;font-size:11px;line-height:1.35;color:#e6edf3;"><strong style="color:#79c0ff;">Outcome</strong> — ' +
+            reasoningEscapeHtml(String(d.sim_effect)) +
+            '</div>'
+          : '');
       panel.insertBefore(row, panel.firstChild);
       while (panel.children.length > 25) panel.removeChild(panel.lastChild);
     }
@@ -933,8 +1095,10 @@
       row.innerHTML =
         '<td style="padding:5px 4px;color:var(--muted);">' +
         reasoningEscapeHtml(String(d.sim_time_str || '')) +
-        '</td><td style="padding:5px 4px;">' +
+        '</td><td style="padding:5px 4px;" title="api_id: ' +
         reasoningEscapeHtml(String(d.api_id || '')) +
+        '">' +
+        reasoningEscapeHtml(llmApiDisplayLabel(d.api_id)) +
         '</td><td style="padding:5px 4px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' +
         reasoningEscapeHtml(String(d.summary || '')) +
         '">' +
@@ -965,7 +1129,7 @@
       ctx.clearRect(0, 0, overlay.width, overlay.height);
       const labels = chartLine.data.labels || [];
       llmEventMarkers.forEach((m) => {
-        const lab = fmtTime(m.timestamp);
+        const lab = thermostatChartAxisLabel(m.timestamp);
         const ix = labels.indexOf(lab);
         if (ix < 0) return;
         try {
@@ -1063,13 +1227,86 @@
     function scenarioUsesHumanInject(scenarioId) {
       return scenarioId === 'cli_bridge' || scenarioId === 'fused';
     }
+    function resetNegotiationCounterInputDefaults() {
+      const cv = document.getElementById('injectCounterVal');
+      const lbl = document.getElementById('injectCounterDimLabel');
+      if (lbl) lbl.textContent = 'Counter °C';
+      if (cv) {
+        cv.min = '14';
+        cv.max = '28';
+        cv.step = '0.5';
+        cv.value = '20.5';
+      }
+    }
+    function clearNegotiationHitlChrome(clearFields) {
+      const hint = document.getElementById('injectNegotiationAwait');
+      const card = document.getElementById('injectThermostatCard');
+      const actions = document.getElementById('injectNegotiationActions');
+      if (hint) {
+        hint.style.display = 'none';
+        hint.setAttribute('aria-hidden', 'true');
+      }
+      if (card) card.classList.remove('hi-negotiation-pending');
+      if (actions) actions.classList.remove('negotiation-actions-highlight');
+      if (clearFields) {
+        const nidEl = document.getElementById('injectNid');
+        if (nidEl) nidEl.value = '';
+        resetNegotiationCounterInputDefaults();
+      }
+    }
+    /** After NegotiationProposal → person_cli: fill id, highlight actions, show short hint in card. */
+    function showNegotiationHitlChrome(detail) {
+      if (!detail || !detail.negotiation_id) return;
+      if (!scenarioUsesHumanInject(state.streamScenario || state.currentScenario)) return;
+      const hint = document.getElementById('injectNegotiationAwait');
+      const card = document.getElementById('injectThermostatCard');
+      const actions = document.getElementById('injectNegotiationActions');
+      const nidEl = document.getElementById('injectNid');
+      const cv = document.getElementById('injectCounterVal');
+      const lbl = document.getElementById('injectCounterDimLabel');
+      if (!hint || !card || !actions || !nidEl) return;
+      nidEl.value = String(detail.negotiation_id);
+      const attr = detail.attr === 'shower_minutes' ? 'shower_minutes' : 'temperature';
+      const pv = detail.proposed_value;
+      if (attr === 'shower_minutes') {
+        if (lbl) lbl.textContent = 'Counter (min)';
+        if (cv) {
+          cv.min = '5';
+          cv.max = '25';
+          cv.step = '0.5';
+          if (typeof pv === 'number' && Number.isFinite(pv)) cv.value = String(pv);
+        }
+      } else {
+        if (lbl) lbl.textContent = 'Counter °C';
+        if (cv) {
+          cv.min = '14';
+          cv.max = '28';
+          cv.step = '0.5';
+          if (typeof pv === 'number' && Number.isFinite(pv)) cv.value = String(pv);
+        }
+      }
+      hint.style.display = 'block';
+      hint.setAttribute('aria-hidden', 'false');
+      card.classList.add('hi-negotiation-pending');
+      actions.classList.add('negotiation-actions-highlight');
+    }
     const state = {
       agents: Object.fromEntries(AGENTS.map(a => [a.id, {
         status: 'idle', detail: '—', pulse: false,
       }])),
       alice: { home: true, x: 168, y: 148, pref: 22, sleeping: false },
       bob: { home: true, x: 220, y: 140, pref: 19, sleeping: false },
-      cli: { home: true, x: 155, y: 152, pref: 23, sleeping: false },
+      cli: {
+        home: true,
+        x: 155,
+        y: 152,
+        pref: 23,
+        sleeping: false,
+        /** Optimistic floor: move You to bathroom on Shower inject before SSE catches runState. */
+        showerIntentBathroom: false,
+        /** True once shower telemetry shows preheat/running after intent (clears intent when cycle ends). */
+        showerIntentSawActivity: false,
+      },
       thermo: { setpoint: 20, device_state: 'idle', outdoorHeatingOff: false },
       dishwasher: { state: 'idle' },
       carbon: { value: null, level: '—' },
@@ -1085,6 +1322,8 @@
       streamScenario: null,
       /** Last NegotiationProposal `negotiation_id` where recipient is person_cli. */
       lastCliProposalId: null,
+      lastCliProposalDevice: null,
+      lastCliProposalAttribute: null,
       /** Highest sim minute seen on `message` events this run (clock never steps backward). */
       runSimMinuteMax: -1,
       shower: { hotWaterFrac: 1.0, runState: 'idle', userId: null, sessionActive: false },
@@ -1172,6 +1411,23 @@
     function weatherSimAxisLabel(simMinutes) {
       const day = Math.floor(simMinutes / MIN_PER_DAY) + 1;
       return 'd' + day + '·' + fmtTime(simMinutes);
+    }
+
+    /** Thermostat chart x-label: day+clock so multi-day runs do not merge unrelated rows at the same HH:MM. */
+    function thermostatChartAxisLabel(ts) {
+      return typeof ts === 'number' && Number.isFinite(ts)
+        ? weatherSimAxisLabel(ts)
+        : fmtTime(ts);
+    }
+
+    const THERMO_C_MIN = 14;
+    const THERMO_C_MAX = 28;
+    /** Parse thermostat °C from SSE (number or string); null if unusable. Clamped to sim band. */
+    function parseThermostatCelsius(raw) {
+      if (raw === null || raw === undefined || raw === '') return null;
+      const n = typeof raw === 'number' ? raw : parseFloat(String(raw));
+      if (!Number.isFinite(n)) return null;
+      return Math.max(THERMO_C_MIN, Math.min(THERMO_C_MAX, n));
     }
 
     function prepareWeatherChartForSimRun() {
@@ -1390,7 +1646,11 @@
     }
 
     function refreshShowerCard() {
-      if (!document.querySelector('[data-agent-id="device_shower"]')) return;
+      const hasCard = document.querySelector('[data-agent-id="device_shower"]');
+      if (!hasCard) {
+        syncShowerDiagramStateOverlay();
+        return;
+      }
       const frac = typeof state.shower.hotWaterFrac === 'number' && Number.isFinite(state.shower.hotWaterFrac)
         ? Math.max(0, Math.min(1, state.shower.hotWaterFrac))
         : 1;
@@ -1398,8 +1658,41 @@
       const rs = state.shower.runState || 'idle';
       let st = 'st-idle';
       if (rs === 'running') st = 'st-negotiating';
+      if (rs === 'preheating') st = 'st-resolved';
       if (rs === 'failed') st = 'st-failed';
-      setAgentCard('device_shower', st, rs, 'Hot water ' + pct + '%');
+      const tag = rs === 'preheating' ? 'preheat' : rs === 'running' ? 'shower' : rs;
+      setAgentCard('device_shower', st, tag, 'Hot water ' + pct + '%');
+      syncShowerDiagramStateOverlay();
+    }
+
+    /** Label on shower chart + visibility when tank is preheating / shower running. */
+    function syncShowerDiagramStateOverlay() {
+      const el = document.getElementById('showerDiagramState');
+      if (!el) return;
+      if (!scenarioHasShowerAgents(state.currentScenario) && !scenarioHasShowerAgents(state.streamScenario || '')) {
+        el.setAttribute('hidden', '');
+        el.style.display = 'none';
+        return;
+      }
+      const rs = state.shower.runState || 'idle';
+      if (rs === 'preheating') {
+        el.removeAttribute('hidden');
+        el.style.display = 'block';
+        el.textContent = 'Preheat · tank refilling';
+        el.className = 'preheat';
+        return;
+      }
+      if (rs === 'running') {
+        el.removeAttribute('hidden');
+        el.style.display = 'block';
+        el.textContent = 'Shower running';
+        el.className = 'running';
+        return;
+      }
+      el.setAttribute('hidden', '');
+      el.style.display = 'none';
+      el.textContent = '';
+      el.className = '';
     }
 
     function updateWeatherSourcePill(source) {
@@ -1456,8 +1749,13 @@
       const sc = state.currentScenario;
       const showering =
         scenarioHasShowerAgents(sc) &&
-        state.shower.runState === 'running' &&
-        state.shower.userId === personId;
+        (
+          (state.shower.runState === 'running' && state.shower.userId === personId) ||
+          (personId === 'person_cli' &&
+            state.cli.showerIntentBathroom &&
+            state.cli.home &&
+            !state.cli.sleeping)
+        );
       let sleeping = false;
       if (personId === 'person_bob') sleeping = state.bob.home && state.bob.sleeping;
       else if (personId === 'person_alice') sleeping = state.alice.home && state.alice.sleeping;
@@ -1609,6 +1907,11 @@
       };
       const inShower = (pid) =>
         scenarioHasShowerAgents(sc) && state.shower.runState === 'running' && state.shower.userId === pid;
+      const cliYouInBathroom =
+        scenarioHasShowerAgents(sc) &&
+        state.cli.home &&
+        !state.cli.sleeping &&
+        (inShower('person_cli') || state.cli.showerIntentBathroom);
 
       let bx;
       let by;
@@ -1638,7 +1941,7 @@
           [ax, ay] = zs.youPorch;
         } else if (state.cli.sleeping) {
           [ax, ay] = zs.youBed;
-        } else if (inShower('person_cli')) {
+        } else if (cliYouInBathroom) {
           [ax, ay] = bathXY('person_cli');
         } else {
           [ax, ay] = zs.youLiv;
@@ -1669,7 +1972,7 @@
             cOp = 0.38;
           } else if (state.cli.sleeping) {
             [cx, cy] = zs.cliBed;
-          } else if (inShower('person_cli')) {
+          } else if (cliYouInBathroom) {
             [cx, cy] = bathXY('person_cli');
           } else {
             [cx, cy] = zs.cliLiv;
@@ -1688,6 +1991,32 @@
         nl.setAttribute('d', `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`);
       } else if (nl) {
         nl.style.display = 'none';
+      }
+
+      if (scenarioHasShowerAgents(sc)) {
+        if (!state.cli.home || state.cli.sleeping) {
+          state.cli.showerIntentBathroom = false;
+          state.cli.showerIntentSawActivity = false;
+        } else {
+          const rs = state.shower.runState || 'idle';
+          if (
+            state.cli.showerIntentBathroom &&
+            (rs === 'preheating' || rs === 'running' || inShower('person_cli'))
+          ) {
+            state.cli.showerIntentSawActivity = true;
+          }
+          if (inShower('person_cli')) {
+            state.cli.showerIntentBathroom = false;
+          }
+          if (
+            state.cli.showerIntentSawActivity &&
+            !inShower('person_cli') &&
+            (rs === 'idle' || rs === 'failed')
+          ) {
+            state.cli.showerIntentBathroom = false;
+            state.cli.showerIntentSawActivity = false;
+          }
+        }
       }
 
       applyFigureStateIndicators(figBob, 'person_bob');
@@ -1710,13 +2039,15 @@
       const th = document.getElementById('thermoIcon');
       const tv = document.getElementById('thermoText');
       if (th && tv) {
-        const sp = state.thermo.setpoint;
-        const t = (sp - 14) / (28 - 14);
+        let sp = parseThermostatCelsius(state.thermo.setpoint);
+        if (sp == null) sp = THERMO_C_MIN;
+        const t = (sp - THERMO_C_MIN) / (THERMO_C_MAX - THERMO_C_MIN);
         const r = Math.round(58 + t * (248 - 58));
         const b = Math.round(166 + t * (88 - 166));
         const col = `rgb(${r},${Math.round((b + r) / 4)},${b})`;
         th.setAttribute('fill', col);
         tv.textContent = String(Math.round(sp * 10) / 10);
+        tv.setAttribute('title', 'Thermostat target °C (same series as chart Setpoint; may differ from last comfort negotiation if rules/clamps apply).');
       }
 
       const dw = document.getElementById('dwRect');
@@ -1747,12 +2078,13 @@
       const sh = document.getElementById('showerIcon');
       if (sh) {
         sh.style.display = SCENARIO_AGENTS[state.currentScenario].includes('device_shower') ? 'block' : 'none';
-        sh.classList.remove('shower-pulse');
+        sh.classList.remove('shower-pulse', 'shower-preheat');
         if (sh.style.display !== 'none' && typeof state.shower.hotWaterFrac === 'number' && Number.isFinite(state.shower.hotWaterFrac)) {
           const frac = Math.max(0, Math.min(1, state.shower.hotWaterFrac));
           const a = 0.22 + 0.72 * frac;
           sh.setAttribute('opacity', String(a));
-          if (state.shower.runState === 'running') sh.classList.add('shower-pulse');
+          if (state.shower.runState === 'preheating') sh.classList.add('shower-preheat');
+          else if (state.shower.runState === 'running') sh.classList.add('shower-pulse');
         }
       }
 
@@ -1770,6 +2102,9 @@
         CarbonIntensityUpdate: '#79c0ff',
         DeviceFailureNotice: '#f85149',
         DeviceTelemetry: '#79c0ff',
+        WaterServiceNotice: '#56d4dd',
+        WaterShowerIntent: '#7ee787',
+        WaterPreheatIntent: '#ffa657',
         CostPressureUpdate: '#fb923c',
         ExternalDisruptionEvent: '#f472b6',
         GrocerySignalUpdate: '#34d399',
@@ -1777,7 +2112,6 @@
         LLMObservationUpdate: '#c084fc',
         LLMApiCall: '#06b6d4',
         LLMPipelineError: '#f85149',
-        RLThermostatNudge: '#ff79c6',
         default: '#8b949e',
       };
       const c = colors[type] || colors.default;
@@ -1797,6 +2131,13 @@
     /** True while an SSE sim run is active — blocks idle loadWeatherSeriesChart from clobbering the sim forecast chart. */
     let simStreamActive = false;
 
+    function updateInjectShowerCardVisibility() {
+      const card = document.getElementById('injectShowerCard');
+      if (!card) return;
+      const sc = document.getElementById('scenario').value;
+      card.style.display = scenarioHasShowerAgents(sc) ? '' : 'none';
+    }
+
     function updateHumanInjectStripVisibility() {
       const strip = document.getElementById('humanInjectStrip');
       const sc = document.getElementById('scenario').value;
@@ -1804,6 +2145,7 @@
         'visible',
         scenarioUsesHumanInject(sc) || scenarioUsesHumanInject(state.streamScenario),
       );
+      updateInjectShowerCardVisibility();
     }
 
     function injectUiFeedback(msg, cls) {
@@ -1822,7 +2164,16 @@
 
     async function postHumanInject(body) {
       const scenarioNow = document.getElementById('scenario').value;
+      const op = body && body.op;
+      const clearShowerWalkIntentIfShowerOp = () => {
+        if (op === 'request_shower') {
+          state.cli.showerIntentBathroom = false;
+          state.cli.showerIntentSawActivity = false;
+          updateFloor();
+        }
+      };
       if (!scenarioUsesHumanInject(scenarioNow) && !scenarioUsesHumanInject(state.streamScenario)) {
+        clearShowerWalkIntentIfShowerOp();
         injectUiFeedback(
           'Human inject only applies to **CLI Human Bridge** or **Fused**. Pick one of those scenarios, click **Run**, then use the buttons here.',
           'err',
@@ -1840,6 +2191,7 @@
           data = await res.json();
         } catch (_) {}
         if (!res.ok) {
+          clearShowerWalkIntentIfShowerOp();
           let d = data && data.detail != null ? data.detail : `HTTP ${res.status}`;
           if (typeof d !== 'string') d = JSON.stringify(d);
           if (
@@ -1857,19 +2209,57 @@
         if (acc && acc.op === 'set_pref' && typeof acc.value === 'number') {
           state.cli.pref = acc.value;
           setAgentCard('person_cli', 'st-home', 'home', acc.value + '°C preferred | ' + (state.cli.home ? 'home' : 'away'));
+          refreshThermostatChartPresenceLines(latestSimMinuteForThermostatChart());
           updateFloor();
         }
         if (acc && acc.op === 'leave') {
           state.cli.home = false;
           setAgentCard('person_cli', 'st-away', 'away', state.cli.pref + '°C preferred');
+          refreshThermostatChartPresenceLines(latestSimMinuteForThermostatChart());
           updateFloor();
         }
         if (acc && acc.op === 'return') {
           state.cli.home = true;
           setAgentCard('person_cli', 'st-home', 'home', state.cli.pref + '°C preferred | home');
+          refreshThermostatChartPresenceLines(latestSimMinuteForThermostatChart());
           updateFloor();
         }
+        if (
+          acc &&
+          (acc.op === 'send_accept' || acc.op === 'send_counter' || acc.op === 'send_reject')
+        ) {
+          clearNegotiationHitlChrome(true);
+          if (acc.op === 'send_counter' && typeof acc.value === 'number') {
+            const dev = acc.device_id != null ? String(acc.device_id) : '';
+            const attr = acc.attribute != null ? String(acc.attribute) : '';
+            const shower = dev === 'device_shower' || attr === 'shower_minutes';
+            if (shower) {
+              setAgentCard(
+                'person_cli',
+                'st-negotiating',
+                'shower negotiation',
+                'You countered ' + acc.value.toFixed(1) + ' min — awaiting next round',
+              );
+            } else {
+              setAgentCard(
+                'person_cli',
+                'st-negotiating',
+                'thermostat negotiation',
+                'You countered ' + acc.value.toFixed(1) + '°C — awaiting device',
+              );
+            }
+          } else if (acc.op === 'send_accept') {
+            const dev = acc.device_id != null ? String(acc.device_id) : '';
+            const lab = dev === 'device_shower' ? 'shower negotiation' : 'thermostat negotiation';
+            setAgentCard('person_cli', 'st-negotiating', lab, 'You accepted — awaiting outcome');
+          } else if (acc.op === 'send_reject') {
+            const dev = acc.device_id != null ? String(acc.device_id) : '';
+            const lab = dev === 'device_shower' ? 'shower negotiation' : 'thermostat negotiation';
+            setAgentCard('person_cli', 'st-negotiating', lab, 'You rejected — awaiting outcome');
+          }
+        }
       } catch (e) {
+        clearShowerWalkIntentIfShowerOp();
         injectUiFeedback(String(e && e.message ? e.message : e), 'err');
       }
     }
@@ -1890,8 +2280,8 @@
       const ds = chartLine.data.datasets;
       while (ds.length > 1) ds.pop();
       ds.push(
-        { label: 'Alice', data: [], borderColor: c.alice, tension: 0.2, pointRadius: 2, spanGaps: true },
-        { label: 'Bob', data: [], borderColor: c.bob, tension: 0.2, pointRadius: 2, spanGaps: true },
+        { label: 'Alice', data: [], borderColor: c.alice, tension: 0.2, pointRadius: 2, spanGaps: false },
+        { label: 'Bob', data: [], borderColor: c.bob, tension: 0.2, pointRadius: 2, spanGaps: false },
       );
       if (hitl) {
         ds.push({
@@ -1900,13 +2290,131 @@
           borderColor: c.cli,
           tension: 0.2,
           pointRadius: 2,
-          spanGaps: true,
+          spanGaps: false,
         });
       }
       chartLine.update('none');
     }
 
-    function appendShowerChartRow(timestampSimMins, pct01, showerDoneMarker) {
+    /** Y value for a person's comfort line, or null while they are away (line hidden / gap). */
+    function prefLineYForChart(personKey, rawPref) {
+      const hitl = scenarioUsesHumanInject(state.streamScenario || state.currentScenario);
+      const v =
+        typeof rawPref === 'number' && Number.isFinite(rawPref)
+          ? rawPref
+          : rawPref != null && rawPref !== ''
+            ? parseFloat(String(rawPref))
+            : NaN;
+      if (!Number.isFinite(v)) return null;
+      if (personKey === 'person_alice' && !state.alice.home) return null;
+      if (personKey === 'person_bob' && !state.bob.home) return null;
+      if (personKey === 'person_cli' && hitl && !state.cli.home) return null;
+      return v;
+    }
+
+    function latestSimMinuteForThermostatChart() {
+      const s = state.runSimMinuteMax;
+      return Number.isFinite(s) && s >= 0 ? s : 0;
+    }
+
+    function refreshThermostatChartPresenceLines(timestampSim) {
+      if (!chartLine) return;
+      const ts = _numOrNaN(timestampSim);
+      if (!Number.isFinite(ts)) return;
+      pushThermostatChartSetpoint(ts, state.thermo.setpoint);
+    }
+
+    /** Keeps the Setpoint line aligned with the floor thermostat (updated on every target_temp). */
+    function pushThermostatChartSetpoint(timestamp, setpointC, prefs) {
+      if (!chartLine) return;
+      const tlab = thermostatChartAxisLabel(timestamp);
+      const labels = chartLine.data.labels;
+      const dss = chartLine.data.datasets;
+      const hitl = scenarioUsesHumanInject(state.streamScenario || state.currentScenario);
+      let aliceV;
+      let bobV;
+      let cliV;
+      if (prefs !== undefined) {
+        aliceV = prefLineYForChart('person_alice', prefs.person_alice);
+        bobV = prefLineYForChart('person_bob', prefs.person_bob);
+        cliV = prefLineYForChart('person_cli', prefs.person_cli);
+      } else {
+        const prevOrState = (dsIx, stateFallback) => {
+          const d = dss[dsIx];
+          if (d && d.data.length) {
+            const x = d.data[d.data.length - 1];
+            if (x != null && Number.isFinite(x)) return x;
+          }
+          return stateFallback;
+        };
+        aliceV = state.alice.home ? prevOrState(1, state.alice.pref) : null;
+        bobV = state.bob.home ? prevOrState(2, state.bob.pref) : null;
+        cliV = hitl && state.cli.home ? prevOrState(3, state.cli.pref) : null;
+      }
+      if (labels.length > 0 && labels[labels.length - 1] === tlab) {
+        const ix = dss[0].data.length - 1;
+        if (ix >= 0) {
+          dss[0].data[ix] = setpointC;
+          if (dss[1]) dss[1].data[ix] = aliceV;
+          if (dss[2]) dss[2].data[ix] = bobV;
+          if (hitl && dss[3]) dss[3].data[ix] = cliV;
+        }
+      } else {
+        labels.push(tlab);
+        dss[0].data.push(setpointC);
+        if (dss[1]) dss[1].data.push(aliceV);
+        if (dss[2]) dss[2].data.push(bobV);
+        if (hitl && dss[3]) dss[3].data.push(cliV);
+      }
+      chartLine.update('none');
+      syncThermostatChartEmptyState();
+      requestAnimationFrame(() => {
+        syncThermostatOverlaySize();
+      });
+    }
+
+    function normalizeShowerPhase(p) {
+      return String(p == null ? '' : p).trim().toLowerCase() || 'idle';
+    }
+
+    /**
+     * Record preheat/running on the chart when only device_state (or same-tick HW) updates —
+     * merges into the last column if the x-label matches so preheat is visible before the next tank sample.
+     */
+    function noteShowerPhaseOnChart(timestampSimMins, phase) {
+      if (
+        !chartShower ||
+        !scenarioHasShowerAgents(state.streamScenario || state.currentScenario)
+      ) return;
+      const ph = normalizeShowerPhase(phase);
+      if (ph !== 'preheating' && ph !== 'running') return;
+      const frac =
+        typeof state.shower.hotWaterFrac === 'number' && Number.isFinite(state.shower.hotWaterFrac)
+          ? Math.max(0, Math.min(1, state.shower.hotWaterFrac))
+          : 1;
+      const lab =
+        typeof timestampSimMins === 'number' && Number.isFinite(timestampSimMins)
+          ? weatherSimAxisLabel(timestampSimMins)
+          : fmtTime(timestampSimMins);
+      const labels = chartShower.data.labels;
+      const n = labels.length;
+      if (n > 0 && labels[n - 1] === lab) {
+        const ix = chartShower.data.datasets[0].data.length - 1;
+        if (ix >= 0) {
+          chartShower.data.datasets[0].data[ix] = Math.round(frac * 1000) / 10;
+          chartShower.data.datasets[2].data[ix] = ph === 'preheating' ? SHOWER_CHART_PREHEAT_Y : null;
+          chartShower.data.datasets[3].data[ix] = ph === 'running' ? SHOWER_CHART_RUNNING_Y : null;
+          if (ph === 'preheating') chartShower.data.datasets[3].data[ix] = null;
+          if (ph === 'running') chartShower.data.datasets[2].data[ix] = null;
+        }
+        chartShower.update('none');
+        syncShowerChartEmptyState();
+        return;
+      }
+      appendShowerChartRow(timestampSimMins, frac, false, ph);
+    }
+
+    function appendShowerChartRow(timestampSimMins, pct01, showerDoneMarker, phaseForRow) {
       if (
         !chartShower ||
         !scenarioHasShowerAgents(state.streamScenario || state.currentScenario)
@@ -1917,9 +2425,30 @@
           ? weatherSimAxisLabel(ts)
           : fmtTime(ts);
       const pct = pct01 != null ? Math.max(0, Math.min(1, pct01)) : 0;
+      const phase = normalizeShowerPhase(phaseForRow != null && phaseForRow !== '' ? phaseForRow : (state.shower.runState || 'idle'));
+      const labels = chartShower.data.labels;
+      if (labels.length > 0 && labels[labels.length - 1] === lab) {
+        const ix = chartShower.data.datasets[0].data.length - 1;
+        if (ix >= 0) {
+          chartShower.data.datasets[0].data[ix] = Math.round(pct * 1000) / 10;
+          if (showerDoneMarker) chartShower.data.datasets[1].data[ix] = 100;
+          if (phase === 'preheating') {
+            chartShower.data.datasets[2].data[ix] = SHOWER_CHART_PREHEAT_Y;
+            chartShower.data.datasets[3].data[ix] = null;
+          } else if (phase === 'running') {
+            chartShower.data.datasets[3].data[ix] = SHOWER_CHART_RUNNING_Y;
+            chartShower.data.datasets[2].data[ix] = null;
+          }
+        }
+        chartShower.update('none');
+        syncShowerChartEmptyState();
+        return;
+      }
       chartShower.data.labels.push(lab);
       chartShower.data.datasets[0].data.push(Math.round(pct * 1000) / 10);
       chartShower.data.datasets[1].data.push(showerDoneMarker ? 100 : null);
+      chartShower.data.datasets[2].data.push(phase === 'preheating' ? SHOWER_CHART_PREHEAT_Y : null);
+      chartShower.data.datasets[3].data.push(phase === 'running' ? SHOWER_CHART_RUNNING_Y : null);
       chartShower.update('none');
       syncShowerChartEmptyState();
     }
@@ -2022,15 +2551,76 @@
         },
       });
       configureNegotiationLineChartForScenario();
+      /** Canvas-drawn markers: Chart.js often skips secondary pointStyle on mixed line charts. */
+      const haloShowerMarkersPlugin = {
+        id: 'haloShowerMarkers',
+        afterDatasetsDraw(chart) {
+          if (chart.canvas?.id !== 'chartShower') return;
+          const yScale = chart.scales.y;
+          const m0 = chart.getDatasetMeta(0);
+          const ds2 = chart.data.datasets[2] && chart.data.datasets[2].data;
+          const ds3 = chart.data.datasets[3] && chart.data.datasets[3].data;
+          if (!yScale || !m0 || !m0.data || !ds2 || !ds3) return;
+          const ctx = chart.ctx;
+          const n = Math.min(chart.data.labels.length, m0.data.length, ds2.length, ds3.length);
+          const xScale = chart.scales.x;
+          for (let i = 0; i < n; i++) {
+            const pt = m0.data[i];
+            let px = pt && !pt.skip && typeof pt.x === 'number' ? pt.x : null;
+            if (px == null && xScale && typeof xScale.getPixelForTick === 'function') {
+              try {
+                px = xScale.getPixelForTick(i);
+              } catch (_) {
+                px = null;
+              }
+            }
+            if (px == null) continue;
+            const p2 = ds2[i];
+            const p3 = ds3[i];
+            if (p2 != null && Number.isFinite(Number(p2))) {
+              const py = yScale.getPixelForValue(Number(p2));
+              const s = 14;
+              ctx.save();
+              ctx.fillStyle = '#ff7b29';
+              ctx.strokeStyle = '#2a1400';
+              ctx.lineWidth = 1.75;
+              ctx.beginPath();
+              ctx.rect(px - s / 2, py - s / 2, s, s);
+              ctx.fill();
+              ctx.stroke();
+              ctx.restore();
+            }
+            if (p3 != null && Number.isFinite(Number(p3))) {
+              const py = yScale.getPixelForValue(Number(p3));
+              const s = 13;
+              ctx.save();
+              ctx.fillStyle = '#79c0ff';
+              ctx.strokeStyle = '#0d1117';
+              ctx.lineWidth = 1.35;
+              ctx.beginPath();
+              ctx.moveTo(px, py - s * 0.48);
+              ctx.lineTo(px - s * 0.52, py + s * 0.42);
+              ctx.lineTo(px + s * 0.52, py + s * 0.42);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+        },
+      };
       const ctxSh = document.getElementById('chartShower');
       if (ctxSh) {
         chartShower = new Chart(ctxSh.getContext('2d'), {
+          plugins: [haloShowerMarkersPlugin],
           type: 'line',
           data: {
             labels: [],
             datasets: [
               {
+                type: 'line',
                 label: 'Hot water %',
+                order: 0,
                 data: [],
                 borderColor: nc.cli,
                 backgroundColor: 'rgba(88, 166, 255, 0.08)',
@@ -2041,14 +2631,43 @@
               },
               {
                 label: 'Shower completed',
+                order: 12,
                 data: [],
-                borderColor: nc.alice,
+                borderColor: '#fff',
+                borderWidth: 1,
                 backgroundColor: nc.alice,
                 showLine: false,
                 pointRadius(ctx) {
-                  const v = ctx.raw;
+                  const raw = ctx.raw;
+                  const v = ctx.parsed != null && ctx.parsed.y != null ? ctx.parsed.y : raw;
                   return v != null && v > 0 ? 9 : 0;
                 },
+                spanGaps: true,
+              },
+              {
+                label: 'Preheat',
+                order: 30,
+                data: [],
+                borderColor: '#ff7b29',
+                borderWidth: 0,
+                backgroundColor: '#ff7b29',
+                showLine: false,
+                pointStyle: 'rect',
+                pointRadius: 0,
+                hitRadius: 20,
+                spanGaps: true,
+              },
+              {
+                label: 'Shower (active)',
+                order: 25,
+                data: [],
+                borderColor: '#79c0ff',
+                borderWidth: 0,
+                backgroundColor: '#79c0ff',
+                showLine: false,
+                pointStyle: 'triangle',
+                pointRadius: 0,
+                hitRadius: 20,
                 spanGaps: true,
               },
             ],
@@ -2056,6 +2675,8 @@
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            clip: false,
+            layout: { padding: { top: 10, right: 4, bottom: 2, left: 2 } },
             interaction: { mode: 'index', intersect: false },
             scales: {
               x: haloCartesianAxis({ maxRotation: 45, maxTicksLimit: 14 }),
@@ -2075,12 +2696,22 @@
               },
             },
             plugins: {
-              legend: { labels: { boxWidth: 10, font: { size: 9, family: HALO_CHART_FONT } } },
+              legend: {
+                labels: {
+                  boxWidth: 10,
+                  font: { size: 9, family: HALO_CHART_FONT },
+                  usePointStyle: true,
+                },
+              },
               tooltip: Object.assign({}, haloChartTooltipDefaults(), {
                 callbacks: {
                   label(ctx) {
-                    if (ctx.datasetIndex === 1 && ctx.raw) return 'Shower completed';
-                    return ctx.dataset.label + ': ' + (ctx.raw != null ? ctx.raw.toFixed(1) : '');
+                    const di = ctx.datasetIndex;
+                    const raw = ctx.raw;
+                    if (di === 1 && raw) return 'Shower finished (tank after 15m drain)';
+                    if (di === 2 && raw != null) return 'Preheat (tank ramp)';
+                    if (di === 3 && raw != null) return 'Shower running (15m cycle)';
+                    return ctx.dataset.label + ': ' + (raw != null ? Number(raw).toFixed(1) : '');
                   },
                 },
               }),
@@ -2145,67 +2776,69 @@
         }
         if (data.msg_type === 'NegotiationProposal' && data.recipient === 'person_cli' && data.negotiation_id) {
           state.lastCliProposalId = String(data.negotiation_id);
+          state.lastCliProposalDevice = data.device_id != null ? String(data.device_id) : 'device_thermostat';
+          state.lastCliProposalAttribute =
+            data.attribute != null ? String(data.attribute) : 'temperature';
+          const attr = state.lastCliProposalAttribute;
+          const pv = data.proposed_value;
+          if (scenarioUsesHumanInject(state.streamScenario || state.currentScenario)) {
+            showNegotiationHitlChrome({
+              negotiation_id: String(data.negotiation_id),
+              proposed_value: typeof pv === 'number' && Number.isFinite(pv) ? pv : null,
+              attr,
+            });
+          }
+          if (attr === 'shower_minutes') {
+            const ptxt =
+              typeof pv === 'number' && Number.isFinite(pv)
+                ? 'Device proposes ' + pv.toFixed(1) + ' min'
+                : 'Device proposal — reply in card';
+            setAgentCard('person_cli', 'st-negotiating', 'shower negotiation', ptxt + ' — use Thermostat negotiation card');
+          } else {
+            const ptxt =
+              typeof pv === 'number' && Number.isFinite(pv)
+                ? 'Device proposes ' + pv.toFixed(1) + '°C'
+                : 'Device proposal — reply in card';
+            setAgentCard('person_cli', 'st-negotiating', 'thermostat negotiation', ptxt + ' — use Thermostat negotiation card');
+          }
+        }
+        if (data.msg_type === 'NegotiationCounter' && data.sender === 'person_cli') {
+          const cv = _numOrNaN(data.counter_value);
+          const attr = data.attribute != null ? String(data.attribute) : 'temperature';
+          if (Number.isFinite(cv)) {
+            if (attr === 'shower_minutes') {
+              setAgentCard(
+                'person_cli',
+                'st-negotiating',
+                'shower negotiation',
+                'You countered ' + cv.toFixed(1) + ' min — awaiting next round',
+              );
+            } else {
+              setAgentCard(
+                'person_cli',
+                'st-negotiating',
+                'thermostat negotiation',
+                'You countered ' + cv.toFixed(1) + '°C — awaiting device',
+              );
+            }
+          }
+        }
+        if (data.msg_type === 'NegotiationAccept' && data.sender === 'person_cli') {
+          const dev = data.device_id != null ? String(data.device_id) : '';
+          const lab = dev === 'device_shower' ? 'shower negotiation' : 'thermostat negotiation';
+          setAgentCard('person_cli', 'st-negotiating', lab, 'You accepted — awaiting outcome');
+        }
+        if (data.msg_type === 'NegotiationReject' && data.sender === 'person_cli') {
+          const dev = data.device_id != null ? String(data.device_id) : '';
+          const lab = dev === 'device_shower' ? 'shower negotiation' : 'thermostat negotiation';
+          setAgentCard('person_cli', 'st-negotiating', lab, 'You rejected — awaiting outcome');
         }
         pushFeed(data, data.description, data.msg_type);
         pulseAgent(data.sender);
         if (data.recipient !== 'broadcast') pulseAgent(data.recipient);
       }
-      if (kind === 'rl_thermostat') {
-        const ap = data.apply || {};
-        const cs = ap.comfort_setpoint;
-        if (typeof cs === 'number' && Number.isFinite(cs)) {
-          state.thermo.setpoint = cs;
-        }
-        const tRaw = _numOrNaN(data.timestamp != null ? data.timestamp : data.sim_time);
-        if (Number.isFinite(tRaw) && tRaw >= state.runSimMinuteMax) {
-          state.runSimMinuteMax = tRaw;
-          document.getElementById('simTime').textContent = 'Sim: ' + weatherSimAxisLabel(tRaw);
-          state.bob._minuteOfDay = tRaw % MIN_PER_DAY;
-        }
-        const tlab = fmtTime(data.timestamp != null ? data.timestamp : data.sim_time);
-        if (chartLine && typeof cs === 'number' && Number.isFinite(cs)) {
-          chartLine.data.labels.push(tlab);
-          chartLine.data.datasets[0].data.push(cs);
-          const dss = chartLine.data.datasets;
-          const prevLen = dss[0].data.length - 1;
-          const aliceV =
-            dss[1] && prevLen > 0 ? dss[1].data[prevLen - 1] : state.alice.pref;
-          const bobV = dss[2] && prevLen > 0 ? dss[2].data[prevLen - 1] : state.bob.pref;
-          const cliV = dss[3] && prevLen > 0 ? dss[3].data[prevLen - 1] : state.cli.pref;
-          if (dss[1]) dss[1].data.push(aliceV);
-          if (dss[2]) dss[2].data.push(bobV);
-          if (dss[3]) dss[3].data.push(cliV);
-          chartLine.update('none');
-          syncThermostatChartEmptyState();
-          requestAnimationFrame(() => {
-            syncThermostatOverlaySize();
-          });
-        }
-        const dStr =
-          typeof data.delta_c === 'number' && Number.isFinite(data.delta_c)
-            ? (data.delta_c >= 0 ? '+' : '') + data.delta_c.toFixed(1) + '°C'
-            : '—';
-        const csStr =
-          typeof cs === 'number' && Number.isFinite(cs) ? cs.toFixed(1) + '°C comfort' : 'comfort —';
-        const appliedStr = ap.applied === false ? ` (not applied: ${ap.reason || 'unknown'})` : '';
-        pushFeed(
-          {
-            timestamp: data.timestamp != null ? data.timestamp : data.sim_time,
-            sender: 'RL policy',
-            recipient: 'device_thermostat',
-            negotiation_id: null,
-          },
-          `${dStr} → ${csStr}${appliedStr}`,
-          'RLThermostatNudge',
-        );
-        setAgentCard(
-          'device_thermostat',
-          ap.applied === false ? 'st-idle' : 'st-resolved',
-          ap.applied === false ? 'idle' : 'RL nudge',
-          thermostatDetailLine(),
-        );
-      }
       if (kind === 'negotiation') {
+        clearNegotiationHitlChrome(true);
         state.metrics.neg++;
         document.getElementById('mNeg').textContent = String(state.metrics.neg);
         if (data.converged) {
@@ -2221,33 +2854,38 @@
           state.metrics.satN++;
           document.getElementById('mSat').textContent = (state.metrics.satSum / state.metrics.satN).toFixed(3);
         }
-        state.thermo.setpoint = data.final_value;
-        const nz = floorZones(state.streamScenario || state.currentScenario);
-        state.negotiationLine = {
-          x1: nz.negAlice[0],
-          y1: nz.negAlice[1] - 14,
-          x2: nz.thermo[0],
-          y2: nz.thermo[1],
-        };
-        setTimeout(() => { state.negotiationLine = null; updateFloor(); }, 800);
-        const prefs = data.participant_preferences || {};
-        const tlab = fmtTime(data.timestamp);
-        chartLine.data.labels.push(tlab);
-        chartLine.data.datasets[0].data.push(data.final_value);
-        const aliceV = prefs.person_alice != null ? prefs.person_alice : null;
-        const bobV = prefs.person_bob != null ? prefs.person_bob : null;
-        const cliV = prefs.person_cli != null ? prefs.person_cli : null;
-        const dss = chartLine.data.datasets;
-        if (dss[1]) dss[1].data.push(aliceV);
-        if (dss[2]) dss[2].data.push(bobV);
-        if (dss[3]) dss[3].data.push(cliV);
-        chartLine.update('none');
-        syncThermostatChartEmptyState();
-        requestAnimationFrame(() => {
-          syncThermostatOverlaySize();
-        });
-        updateFloor();
-        setAgentCard('device_thermostat', 'st-resolved', 'resolved', data.final_value.toFixed(1) + '°C comfort resolved');
+        const fv = parseThermostatCelsius(data.final_value);
+        const attr = data.preference_attribute != null && String(data.preference_attribute).trim() !== ''
+          ? String(data.preference_attribute)
+          : 'temperature';
+        if (attr === 'temperature' && data.device_id === 'device_thermostat' && fv != null) {
+          state.thermo.setpoint = fv;
+          const nz = floorZones(state.streamScenario || state.currentScenario);
+          state.negotiationLine = {
+            x1: nz.negAlice[0],
+            y1: nz.negAlice[1] - 14,
+            x2: nz.thermo[0],
+            y2: nz.thermo[1],
+          };
+          setTimeout(() => { state.negotiationLine = null; updateFloor(); }, 800);
+          pushThermostatChartSetpoint(data.timestamp, fv, data.participant_preferences || {});
+          updateFloor();
+          setAgentCard('device_thermostat', 'st-resolved', 'resolved', fv.toFixed(1) + '°C comfort resolved');
+        }
+        if (attr === 'shower_minutes' && data.device_id === 'device_shower') {
+          const mins = typeof data.final_value === 'number' && Number.isFinite(data.final_value)
+            ? data.final_value
+            : parseFloat(String(data.final_value));
+          const mtxt = Number.isFinite(mins) ? mins.toFixed(1) + ' min agreed' : String(data.final_value);
+          setAgentCard('device_shower', 'st-resolved', 'resolved', 'Shower duration · ' + mtxt);
+          const z = state.cli.sleeping && state.cli.home ? ' · in bed' : '';
+          setAgentCard(
+            'person_cli',
+            state.cli.home ? 'st-home' : 'st-away',
+            state.cli.home ? (state.cli.sleeping ? 'sleeping' : 'home') : 'away',
+            state.cli.pref + '°C preferred | ' + (state.cli.home ? 'home' : 'away') + z,
+          );
+        }
       }
       if (kind === 'failure') {
         if (data.device_id === 'device_shower') state.shower.runState = 'failed';
@@ -2269,6 +2907,7 @@
             const stTxt = state.alice.sleeping && state.alice.home ? 'sleeping' : v;
             setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', stTxt,
               state.alice.pref + '°C preferred | ' + (v === 'home' ? 'home' : 'away') + z);
+            refreshThermostatChartPresenceLines(data.timestamp);
           }
           if (id === 'person_bob') {
             state.bob.home = v === 'home';
@@ -2277,6 +2916,7 @@
             const stTxt = state.bob.sleeping && state.bob.home ? 'sleeping' : v;
             setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', stTxt,
               state.bob.pref + '°C preferred | ' + (v === 'home' ? 'home' : 'away') + z);
+            refreshThermostatChartPresenceLines(data.timestamp);
           }
           if (id === 'person_cli') {
             state.cli.home = v === 'home';
@@ -2285,6 +2925,7 @@
             const stTxt = state.cli.sleeping && state.cli.home ? 'sleeping' : v;
             setAgentCard(id, v === 'home' ? 'st-home' : 'st-away', stTxt,
               state.cli.pref + '°C preferred | ' + (v === 'home' ? 'home' : 'away') + z);
+            refreshThermostatChartPresenceLines(data.timestamp);
           }
         }
         if (data.state_key === 'activity') {
@@ -2325,6 +2966,7 @@
               const z = state.cli.sleeping && state.cli.home ? ' · in bed' : '';
               setAgentCard(id, 'st-home', 'home', vNum + '°C preferred | ' + (state.cli.home ? 'home' : 'away') + z);
             }
+            refreshThermostatChartPresenceLines(data.timestamp);
           }
         }
         if (data.state_key === 'device_state') {
@@ -2340,17 +2982,24 @@
           }
           if (id === 'device_shower') {
             const prev = state.shower.runState || 'idle';
-            state.shower.runState = v || 'idle';
-            if (v === 'running') state.shower.sessionActive = true;
-            if (v === 'failed') {
+            const drv = normalizeShowerPhase(v);
+            state.shower.runState = drv || 'idle';
+            if (drv === 'running') state.shower.sessionActive = true;
+            if (drv === 'failed') {
               state.shower.sessionActive = false;
               state.shower.userId = null;
             }
-            if (prev === 'running' && v === 'idle' && state.shower.sessionActive) {
+            if (prev === 'running' && drv === 'idle' && state.shower.sessionActive) {
               showerChartMarkCompleteOnLatestRow();
               state.shower.sessionActive = false;
             }
             refreshShowerCard();
+            if (drv === 'preheating' || drv === 'running') {
+              const t = data.timestamp != null && Number.isFinite(Number(data.timestamp))
+                ? Number(data.timestamp)
+                : null;
+              if (t != null) noteShowerPhaseOnChart(t, drv);
+            }
           }
         }
         if (data.state_key === 'shower_user' && id === 'device_shower') {
@@ -2358,12 +3007,21 @@
         }
         if (data.state_key === 'hot_water_fraction' && id === 'device_shower' && typeof v === 'number' && Number.isFinite(v)) {
           state.shower.hotWaterFrac = v;
-          appendShowerChartRow(data.timestamp, v, false);
+          const act = typeof data.device_activity === 'string' ? data.device_activity : '';
+          if (act !== '') {
+            state.shower.runState = normalizeShowerPhase(act);
+          }
+          const phase = act !== '' ? normalizeShowerPhase(act) : normalizeShowerPhase(state.shower.runState || 'idle');
+          appendShowerChartRow(data.timestamp, v, false, phase);
           refreshShowerCard();
         }
-        if (data.state_key === 'target_temp' && typeof v === 'number' && id === 'device_thermostat') {
-          state.thermo.setpoint = v;
-          setAgentCard('device_thermostat', 'st-idle', 'idle', thermostatDetailLine());
+        if (data.state_key === 'target_temp' && id === 'device_thermostat') {
+          const tv = parseThermostatCelsius(v);
+          if (tv != null) {
+            state.thermo.setpoint = tv;
+            pushThermostatChartSetpoint(data.timestamp, tv);
+            setAgentCard('device_thermostat', 'st-idle', 'idle', thermostatDetailLine());
+          }
         }
         if (data.state_key === 'outdoor_heating_off' && id === 'device_thermostat') {
           state.thermo.outdoorHeatingOff = !!data.state_value;
@@ -2463,13 +3121,15 @@
     }
 
     setInterval(() => {
-      while (eventQueue.length > 0) {
+      const cap = 40;
+      let n = 0;
+      while (eventQueue.length > 0 && n < cap) {
         const ev = eventQueue.shift();
         if (ev.runId !== streamRunId) continue;
         processOneEvent(ev.kind, ev.data);
-        break;
+        n++;
       }
-    }, 100);
+    }, 32);
 
     function resetMetrics() {
       state._floorSvgScenario = null;
@@ -2488,6 +3148,8 @@
       state.alice.sleeping = false;
       state.bob.sleeping = false;
       state.cli.sleeping = false;
+      state.cli.showerIntentBathroom = false;
+      state.cli.showerIntentSawActivity = false;
       state.shower = { hotWaterFrac: 1.0, runState: 'idle', userId: null, sessionActive: false };
       refreshShowerCard();
       chartLine.data.labels = [];
@@ -2508,6 +3170,7 @@
       }
       toggleThermostatChartEmpty(true);
       syncShowerChartEmptyState();
+      syncShowerDiagramStateOverlay();
     }
 
     function startStream() {
@@ -2531,6 +3194,9 @@
       const liveOn = document.getElementById('liveDataToggle').checked;
       state.streamScenario = scenario;
       state.lastCliProposalId = null;
+      state.lastCliProposalDevice = null;
+      state.lastCliProposalAttribute = null;
+      clearNegotiationHitlChrome(true);
       state.currentScenario = scenario;
       buildLeftColumn();
       refreshShowerCard();
@@ -2592,10 +3258,6 @@
       evtSource.addEventListener('negotiation', e => {
         if (e.target !== evtSource) return;
         enqueue('negotiation', JSON.parse(e.data));
-      });
-      evtSource.addEventListener('rl_thermostat', e => {
-        if (e.target !== evtSource) return;
-        enqueue('rl_thermostat', JSON.parse(e.data));
       });
       evtSource.addEventListener('failure', e => {
         if (e.target !== evtSource) return;
@@ -2714,6 +3376,7 @@
       }
       simStreamActive = false;
       state.streamScenario = null;
+      clearNegotiationHitlChrome(true);
       updateHumanInjectStripVisibility();
       while (eventQueue.length) eventQueue.shift();
       const rs = document.getElementById('runStatus');
@@ -2750,7 +3413,11 @@
         return;
       }
       document.getElementById('injectNid').value = state.lastCliProposalId;
-      injectUiFeedback('Filled negotiation id from last proposal to person_cli.', 'ok');
+      const rt =
+        state.lastCliProposalAttribute === 'shower_minutes'
+          ? ' (shower minutes → device_shower)'
+          : ' (thermostat °C)';
+      injectUiFeedback('Filled nid + routing for last proposal to person_cli' + rt + '.', 'ok');
     });
     document.getElementById('injectSetPref').addEventListener('click', () => {
       const v = parseFloat(String(document.getElementById('injectPref').value || '21'));
@@ -2765,7 +3432,12 @@
         injectUiFeedback('Negotiation id required — click **Last nid** after a proposal to person_cli, or paste from the feed.', 'err');
         return;
       }
-      void postHumanInject({ op: 'send_counter', value: val, negotiation_id: nid });
+      const body = { op: 'send_counter', value: val, negotiation_id: nid };
+      if (nid === state.lastCliProposalId && state.lastCliProposalDevice) {
+        body.device_id = state.lastCliProposalDevice;
+        body.attribute = state.lastCliProposalAttribute;
+      }
+      void postHumanInject(body);
     });
     document.getElementById('injectAccept').addEventListener('click', () => {
       const nid = String(document.getElementById('injectNid').value || '').trim();
@@ -2773,7 +3445,40 @@
         injectUiFeedback('Negotiation id required — **Last nid** or copy from feed.', 'err');
         return;
       }
-      void postHumanInject({ op: 'send_accept', negotiation_id: nid });
+      const body = { op: 'send_accept', negotiation_id: nid };
+      if (nid === state.lastCliProposalId && state.lastCliProposalDevice) {
+        body.device_id = state.lastCliProposalDevice;
+        body.attribute = state.lastCliProposalAttribute;
+      }
+      void postHumanInject(body);
+    });
+    document.getElementById('injectReject').addEventListener('click', () => {
+      const nid = String(document.getElementById('injectNid').value || '').trim();
+      if (!nid) {
+        injectUiFeedback('Negotiation id required — **Last nid** or copy from feed.', 'err');
+        return;
+      }
+      const body = { op: 'send_reject', negotiation_id: nid, reason: 'user_reject' };
+      if (nid === state.lastCliProposalId && state.lastCliProposalDevice) {
+        body.device_id = state.lastCliProposalDevice;
+        body.attribute = state.lastCliProposalAttribute;
+      }
+      void postHumanInject(body);
+    });
+
+    document.getElementById('injectShower').addEventListener('click', async () => {
+      const sc = document.getElementById('scenario').value;
+      if (
+        scenarioHasShowerAgents(sc) &&
+        (scenarioUsesHumanInject(sc) || scenarioUsesHumanInject(state.streamScenario))
+      ) {
+        state.cli.showerIntentBathroom = true;
+        updateFloor();
+      }
+      await postHumanInject({ op: 'request_shower' });
+    });
+    document.getElementById('injectPreheat').addEventListener('click', () => {
+      void postHumanInject({ op: 'request_preheat' });
     });
 
     initCharts();

@@ -22,6 +22,7 @@ import threading
 import time
 import traceback
 from datetime import datetime, timezone
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,70 @@ from fastapi.responses import FileResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 logger = logging.getLogger(__name__)
+
+# --- LLM inspector (thread-safe; filled while /stream SimPy worker runs) ---
+_llm_inspector_lock = threading.Lock()
+_llm_inspector_timeline: deque[dict[str, Any]] = deque(maxlen=80)
+_api_registry_for_hints: Any = None
+
+
+def _api_registry_singleton() -> Any:
+    global _api_registry_for_hints
+    if _api_registry_for_hints is None:
+        from halo_simulation.external.api_registry import ApiRegistry
+
+        _api_registry_for_hints = ApiRegistry()
+    return _api_registry_for_hints
+
+
+def _reset_llm_inspector_timeline() -> None:
+    with _llm_inspector_lock:
+        _llm_inspector_timeline.clear()
+
+
+def llm_effects_reference() -> dict[str, str]:
+    """Static map: HALO message types emitted after LLM interpretation → who reacts in this codebase."""
+    return {
+        "ExternalDisruptionEvent": (
+            "All PersonAgents (Alice, Bob, person_cli, …) receive the broadcast. "
+            "If the summary text matches transport keywords (strike, rail, delay, …), that person "
+            "accumulates extra simulated minutes before their next return home. "
+            "If it matches energy keywords (power, outage, grid, …), their comfort_weight is reduced slightly."
+        ),
+        "CostPressureUpdate": (
+            "ThermostatDeviceAgent only: boosts device-side negotiation weight for a timed window "
+            "after the message (severity sets duration and boost size)."
+        ),
+        "WeatherForecastAlert": (
+            "ThermostatDeviceAgent only: if hourly forecast implies heatwave or cold snap, "
+            "temporarily caps or floors the comfort negotiation range for a simulated-time window."
+        ),
+        "GrocerySignalUpdate": (
+            "LLMSpecialistAgent listens and may emit a virtual_shopping ActuationCommand with suggested items; "
+            "mainly narrative / feed unless other agents subscribe."
+        ),
+        "LLMObservationUpdate": (
+            "Generic advisory broadcast for dashboards; no built-in subscriber beyond the UI stream."
+        ),
+    }
+
+
+def _pending_api_effect_hints(api_ids: list[str]) -> list[dict[str, str]]:
+    reg = _api_registry_singleton()
+    ref = llm_effects_reference()
+    out: list[dict[str, str]] = []
+    for aid in api_ids:
+        d = reg.get(aid)
+        halo = str(d.halo_message_type) if d else ""
+        eff = ref.get(halo, "Advisory HALO message; effect depends on subscribers.")
+        out.append(
+            {
+                "api_id": aid,
+                "halo_message_type": halo,
+                "effect_summary": eff,
+            }
+        )
+    return out
 
 # Ensure repo root is on path so `halo_simulation` package resolves when running
 # `python server.py` from inside this directory.
@@ -153,6 +218,148 @@ LLM_DRIVEN_MSG_TYPES: frozenset[str] = frozenset(
     }
 )
 
+_LLM_TRANSPORT_KW: tuple[str, ...] = (
+    "strike",
+    "tube",
+    "rail",
+    "train",
+    "bus",
+    "delay",
+    "disruption",
+    "transport",
+)
+_LLM_ENERGY_KW: tuple[str, ...] = ("power", "outage", "blackout", "energy", "electricity", "grid")
+
+
+def _external_disruption_effect(summary: str, severity: str) -> str:
+    s = summary.lower()
+    sev = str(severity or "low").lower()
+    delay = {"low": 15.0, "medium": 45.0, "high": 90.0}.get(sev, 30.0)
+    parts: list[str] = []
+    if any(k in s for k in _LLM_TRANSPORT_KW):
+        parts.append(
+            f"PersonAgents: each adds +{delay:g} sim min to return-home delay (transport keyword in summary)."
+        )
+    if any(k in s for k in _LLM_ENERGY_KW):
+        parts.append("PersonAgents: each lowers comfort_weight by 0.2 (min 0.3) when energy keyword matches.")
+    if not parts:
+        return "Simulation: unchanged (summary matched no transport or energy keywords)."
+    return " ".join(parts)
+
+
+def _cost_pressure_effect(severity: str) -> str:
+    sev = str(severity or "low").lower()
+    if sev == "high":
+        boost, mins = 0.4, 120
+    elif sev == "medium":
+        boost, mins = 0.2, 60
+    else:
+        boost, mins = 0.1, 30
+    return (
+        f"ThermostatDeviceAgent: negotiation device_weight gets +{boost} boost (with cap) for {mins} sim min "
+        f"(severity={sev!r})."
+    )
+
+
+def _weather_forecast_effect(pl: dict[str, Any]) -> str:
+    hourly = pl.get("hourly")
+    temps: list[float] = []
+    if isinstance(hourly, dict):
+        raw = hourly.get("temperature_2m")
+        if isinstance(raw, list):
+            temps = [float(x) for x in raw[:24] if x is not None]
+    elif isinstance(hourly, list):
+        temps = [float(x) for x in hourly[:24]]
+    if not temps:
+        return "Simulation: unchanged (no hourly temperature series in payload)."
+    upcoming_max = max(temps[:6])
+    upcoming_min = min(temps[:6])
+    if upcoming_max > 30.0:
+        return (
+            f"ThermostatDeviceAgent: max of next 6 hourly temps = {upcoming_max:.1f}°C (>30) "
+            "→ setpoint ceiling 22°C for 180 sim min."
+        )
+    if upcoming_min < 2.0:
+        return (
+            f"ThermostatDeviceAgent: min of next 6 hourly temps = {upcoming_min:.1f}°C (<2) "
+            "→ setpoint floor 17°C for 180 sim min."
+        )
+    return (
+        f"Simulation: unchanged (next-6h min/max = {upcoming_min:.1f}°C / {upcoming_max:.1f}°C; "
+        "thresholds not met)."
+    )
+
+
+def _sim_effect_for_halo_payload(msg_type: str, pl: dict[str, Any]) -> str:
+    mt = str(msg_type or "")
+    if mt == MessageTypes.ExternalDisruptionEvent:
+        return _external_disruption_effect(str(pl.get("summary", "")), str(pl.get("severity", "low")))
+    if mt == MessageTypes.CostPressureUpdate:
+        return _cost_pressure_effect(str(pl.get("severity", "low")))
+    if mt == MessageTypes.WeatherForecastAlert:
+        return _weather_forecast_effect(pl)
+    if mt == MessageTypes.GrocerySignalUpdate:
+        return (
+            "LLMSpecialistAgent may emit virtual_shopping ActuationCommand; PersonAgent ignores "
+            "ActuationCommand (pass). Thermostat/shower/dishwasher: no code path for GrocerySignalUpdate."
+        )
+    if mt == MessageTypes.LLMObservationUpdate:
+        return "Simulation: unchanged (no agent handler for LLMObservationUpdate in agents/)."
+    return f"Simulation: unknown msg_type {mt!r} for built-in effect mapping."
+
+
+def _compute_sim_effect_line(entry: dict[str, Any]) -> str:
+    kind = entry.get("kind")
+    if kind == "llm_pipeline_error":
+        ph = str(entry.get("phase") or "").lower()
+        if ph == "cooldown":
+            return "Simulation: unchanged (API on cooldown; no HTTP request — not an LLM failure)."
+        return "Simulation: unchanged (LLM/API error; no observation applied)."
+    if kind == "llm_reasoning":
+        if not entry.get("relevant"):
+            return "Decision: relevant=false → no API queued. Simulation: unchanged."
+        aid = str(entry.get("api_id") or "").strip().lower()
+        if aid in ("", "none"):
+            return "Decision: relevant but api_id empty/none. Simulation: unchanged."
+        return (
+            f"Decision: queue API {entry.get('api_id')!r}. "
+            "Simulation: unchanged until fetch + interpret emit a bus message (see following rows)."
+        )
+    if kind == "llm_api_call":
+        if not entry.get("success"):
+            return "Simulation: unchanged (call failed or no interpretation payload)."
+        hmt = str(entry.get("halo_message_type") or "")
+        if not hmt:
+            return "Simulation: unchanged (success without halo_message_type)."
+        summ = str(entry.get("observation_summary") or "")
+        sev = str(entry.get("severity") or "low")
+        if hmt == MessageTypes.ExternalDisruptionEvent:
+            return _external_disruption_effect(summ, sev)
+        if hmt == MessageTypes.CostPressureUpdate:
+            return _cost_pressure_effect(sev)
+        if hmt == MessageTypes.WeatherForecastAlert:
+            return (
+                "WeatherForecastAlert emitted. Thermostat effect uses hourly temps in the llm_observation "
+                "row (same run); API row alone may not include hourly JSON."
+            )
+        if hmt == MessageTypes.GrocerySignalUpdate:
+            return _sim_effect_for_halo_payload(hmt, {"summary": summ, "severity": sev})
+        if hmt == MessageTypes.LLMObservationUpdate:
+            return _sim_effect_for_halo_payload(hmt, {"summary": summ, "severity": sev})
+        return f"Emitted {hmt!r}; no specialized sim_effect text for this type."
+    if kind == "llm_observation":
+        mt = str(entry.get("msg_type") or "")
+        pl = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+        return _sim_effect_for_halo_payload(mt, pl)
+    return f"Unknown timeline kind {kind!r}."
+
+
+def _append_llm_timeline(entry: dict[str, Any]) -> None:
+    row = dict(entry)
+    row.setdefault("sim_effect", _compute_sim_effect_line(row))
+    with _llm_inspector_lock:
+        _llm_inspector_timeline.append(row)
+
 
 def _describe_message(msg: Message) -> str:
     pl = msg.payload or {}
@@ -170,8 +377,18 @@ def _describe_message(msg: Message) -> str:
         nid = pl.get("negotiation_id", "")
         nid_s = f" · nid {nid}" if nid else ""
         return f"Propose {pl.get('proposed_value', '?')} ({pl.get('attribute', '')}){nid_s}"
+    if mt == MessageTypes.NegotiationCounter:
+        return f"Counter {pl.get('counter_value', '?')} ({pl.get('attribute', 'temperature')})"
+    if mt == MessageTypes.NegotiationAccept:
+        return "Accept negotiation"
+    if mt == MessageTypes.NegotiationReject:
+        return f"Reject ({pl.get('reason', '')})"
     if mt == MessageTypes.NegotiationResolved:
-        return f"Resolved setpoint {pl.get('final_value', '?')}°C"
+        attr = str(pl.get("attribute", "temperature") or "temperature")
+        fv = pl.get("final_value", "?")
+        if attr == "shower_minutes":
+            return f"Resolved shower duration {fv} min"
+        return f"Resolved setpoint {fv}°C"
     if mt == MessageTypes.NegotiationFailed:
         return "Negotiation failed — fallback"
     if mt == MessageTypes.DeviceFailureNotice:
@@ -204,6 +421,10 @@ def _describe_message(msg: Message) -> str:
         return f"Weather alert ({pl.get('severity', '?')}): {pl.get('summary', '')}"
     if mt == MessageTypes.LLMObservationUpdate:
         return pl.get("summary") or "LLM observation"
+    if mt == MessageTypes.WaterServiceNotice:
+        return str(pl.get("detail") or "Water")
+    if mt in (MessageTypes.WaterShowerIntent, MessageTypes.WaterPreheatIntent):
+        return "Shower request" if mt == MessageTypes.WaterShowerIntent else "Preheat request"
     if mt in (MessageTypes.DepartureNotice, MessageTypes.ArrivalNotice, MessageTypes.SleepNotice):
         return mt.replace("Notice", "").lower()
     return str(mt)
@@ -211,22 +432,55 @@ def _describe_message(msg: Message) -> str:
 
 def message_to_public_dict(msg: Message) -> dict[str, Any]:
     pl = msg.payload or {}
+    mt = msg.msg_type
     out: dict[str, Any] = {
         "timestamp": msg.timestamp,
         "sender": msg.sender_id,
         "recipient": msg.recipient_id,
-        "msg_type": msg.msg_type,
+        "msg_type": mt,
         "description": _describe_message(msg),
         "priority": msg.priority,
     }
     nid = pl.get("negotiation_id")
     if nid is not None:
         out["negotiation_id"] = str(nid)
+    if mt == MessageTypes.NegotiationProposal:
+        if pl.get("device_id") is not None:
+            out["device_id"] = str(pl["device_id"])
+        if pl.get("attribute") is not None:
+            out["attribute"] = str(pl["attribute"])
+        pv = pl.get("proposed_value")
+        if pv is not None:
+            try:
+                out["proposed_value"] = float(pv)
+            except (TypeError, ValueError):
+                out["proposed_value"] = pv
+    if mt == MessageTypes.NegotiationCounter:
+        if pl.get("device_id") is not None:
+            out["device_id"] = str(pl["device_id"])
+        if pl.get("attribute") is not None:
+            out["attribute"] = str(pl["attribute"])
+        cv = pl.get("counter_value")
+        if cv is not None:
+            try:
+                out["counter_value"] = float(cv)
+            except (TypeError, ValueError):
+                out["counter_value"] = cv
+    if mt == MessageTypes.NegotiationAccept:
+        if pl.get("device_id") is not None:
+            out["device_id"] = str(pl["device_id"])
+        if pl.get("attribute") is not None:
+            out["attribute"] = str(pl["attribute"])
+    if mt == MessageTypes.NegotiationReject:
+        if pl.get("device_id") is not None:
+            out["device_id"] = str(pl["device_id"])
+        if pl.get("reason") is not None:
+            out["reason"] = str(pl["reason"])
     return out
 
 
 def negotiation_to_dict(e: NegotiationEvent) -> dict[str, Any]:
-    return {
+    out: dict[str, Any] = {
         "timestamp": e.timestamp,
         "device_id": e.device_id,
         "iterations": e.iterations,
@@ -238,6 +492,9 @@ def negotiation_to_dict(e: NegotiationEvent) -> dict[str, Any]:
         "participants": list(e.participants),
         "participant_preferences": dict(e.participant_preferences or {}),
     }
+    if e.preference_attribute:
+        out["preference_attribute"] = e.preference_attribute
+    return out
 
 
 def failure_to_dict(e: FailureEvent) -> dict[str, Any]:
@@ -266,14 +523,18 @@ def learning_to_dict(e: LearningEvent) -> dict[str, Any]:
 def llm_reasoning_to_dict(event: LLMReasoningEvent, pending_calls: list[str]) -> dict[str, Any]:
     ts = int(event.timestamp)
     sim_time_str = sim_minutes_to_clock_str(float(ts))
+    snap = [dict(x) for x in (event.context_snapshot or [])]
+    pc = list(pending_calls)
     return {
         "sim_time": ts,
         "sim_time_str": sim_time_str,
-        "context_size": len(event.context_snapshot),
+        "context_size": len(snap),
+        "context_snapshot": snap,
         "relevant": event.relevant,
         "api_id": event.api_id,
         "reason": event.reason,
-        "pending_calls": list(pending_calls),
+        "pending_calls": pc,
+        "pending_effect_hints": _pending_api_effect_hints(pc),
         "llm_latency_ms": event.llm_latency_ms,
     }
 
@@ -507,16 +768,6 @@ def agent_states_from_message(msg: Message) -> list[dict[str, Any]]:
             fv = float(frac) if frac is not None else None
         except (TypeError, ValueError):
             fv = None
-        if fv is not None:
-            out.append(
-                {
-                    "agent_id": did,
-                    "agent_type": "device",
-                    "state_key": "hot_water_fraction",
-                    "state_value": fv,
-                    "timestamp": ts,
-                }
-            )
         act = pl.get("device_activity")
         if isinstance(act, str):
             out.append(
@@ -528,6 +779,19 @@ def agent_states_from_message(msg: Message) -> list[dict[str, Any]]:
                     "timestamp": ts,
                 }
             )
+        if fv is not None:
+            hw_row: dict[str, Any] = {
+                "agent_id": did,
+                "agent_type": "device",
+                "state_key": "hot_water_fraction",
+                "state_value": fv,
+                "timestamp": ts,
+            }
+            # Echo activity on the same row so the UI can mark preheat/running on every tank sample
+            # (recharge telemetry often omits device_activity; preheat steps always include it here).
+            if isinstance(act, str):
+                hw_row["device_activity"] = act
+            out.append(hw_row)
         uid_marker = pl.get("shower_user_id", _NO_SHOWER_UID_IN_TELEMETRY)
         if uid_marker is not _NO_SHOWER_UID_IN_TELEMETRY:
             out.append(
@@ -562,15 +826,28 @@ class StreamingMetricsCollector(MetricsCollector):
 
     def log_llm_reasoning(self, event: LLMReasoningEvent, pending_calls: list[str] | None = None) -> None:
         super().log_llm_reasoning(event, pending_calls)
-        self._emit("llm_reasoning", llm_reasoning_to_dict(event, pending_calls or []))
+        pc = pending_calls or []
+        payload = llm_reasoning_to_dict(event, pc)
+        row = {"kind": "llm_reasoning", **payload}
+        row["sim_effect"] = _compute_sim_effect_line(row)
+        self._emit("llm_reasoning", row)
+        _append_llm_timeline(row)
 
     def log_llm_api_call(self, event: LLMApiCallEvent) -> None:
         super().log_llm_api_call(event)
-        self._emit("llm_api_call", llm_api_call_to_dict(event))
+        base = llm_api_call_to_dict(event)
+        row = {"kind": "llm_api_call", **base}
+        row["sim_effect"] = _compute_sim_effect_line(row)
+        self._emit("llm_api_call", row)
+        _append_llm_timeline(row)
 
     def log_llm_failure(self, event: LLMFailureEvent) -> None:
         super().log_llm_failure(event)
-        self._emit("llm_pipeline_error", llm_failure_to_dict(event))
+        base = llm_failure_to_dict(event)
+        row = {"kind": "llm_pipeline_error", **base}
+        row["sim_effect"] = _compute_sim_effect_line(row)
+        self._emit("llm_pipeline_error", row)
+        _append_llm_timeline(row)
 
 
 class StreamingMessageBus(MessageBus):
@@ -629,7 +906,11 @@ class StreamingMessageBus(MessageBus):
                 },
             )
         if message.msg_type in LLM_DRIVEN_MSG_TYPES:
-            self._emit("llm_observation", llm_observation_from_message(message))
+            obs = llm_observation_from_message(message)
+            row = {"kind": "llm_observation", **obs}
+            row["sim_effect"] = _compute_sim_effect_line(row)
+            self._emit("llm_observation", row)
+            _append_llm_timeline(row)
 
 
 def make_emit(loop: asyncio.AbstractEventLoop, q: asyncio.Queue) -> Callable[[str, dict[str, Any]], None]:
@@ -785,6 +1066,20 @@ def run_simulation_thread(
             rs: dict[str, Any] = {"sim_epoch_utc": sim_epoch.isoformat()}
             if demo_wall_seconds > 0:
                 rs["demo_wall_seconds"] = float(demo_wall_seconds)
+            if scenario_name == "fused":
+                rs["shower_model"] = {
+                    "auto_poll_min": float(config.FUSED_AUTO_PREHEAT_POLL_MINUTES),
+                    "tank_below": float(config.FUSED_AUTO_PREHEAT_TANK_TRIGGER),
+                    "preheat_target": float(config.FUSED_AUTO_PREHEAT_TANK_TARGET),
+                    "preheat_fill_per_min": float(config.FUSED_AUTO_PREHEAT_FILL_PER_MINUTE),
+                    "preheat_step_min": 3.0,
+                    "carbon_cap_gco2kwh": float(config.CARBON_HIGH_THRESHOLD),
+                    "auto_block_cooldown_min": float(config.FUSED_AUTO_PREHEAT_BLOCK_NOTICE_COOLDOWN_MIN),
+                    "drain_per_shower": float(config.HOT_WATER_DRAIN_PER_SHOWER),
+                    "recharge_per_min_base": float(config.HOT_WATER_RECHARGE_PER_MINUTE_BASE),
+                    "grid_clean_recharge_mult": float(config.HOT_WATER_RECHARGE_GRID_CLEAN_MULTIPLIER),
+                    "shower_cycle_min": 15.0,
+                }
             emit("run_start", rs)
             sc = create_scenario(
                 scenario_name,
@@ -822,22 +1117,6 @@ def run_simulation_thread(
 
             sc.register_all()
             sc.start_processes()
-            rl_model = os.environ.get("HALO_RL_THERMOSTAT_MODEL", "").strip()
-            if rl_model:
-                try:
-                    from halo_simulation.rl.live_inference import attach_rl_thermostat_sidecar
-
-                    attach_rl_thermostat_sidecar(sc, emit, rl_model)
-                    logger.info(
-                        "RL thermostat sidecar attached for scenario=%s (HALO_RL_THERMOSTAT_MODEL=%r)",
-                        scenario_name,
-                        rl_model,
-                    )
-                except Exception:
-                    logger.exception(
-                        "HALO_RL_THERMOSTAT_MODEL is set (%r) but RL thermostat sidecar failed to start",
-                        rl_model,
-                    )
             until = float(config.MINUTES_PER_DAY * days)
             chunk = float(config.STREAM_STOP_CHECK_CHUNK_MINUTES)
             stopped_early = False
@@ -900,6 +1179,29 @@ async def index() -> FileResponse:
     return FileResponse(path, media_type="text/html")
 
 
+@app.get("/api/llm-inspector")
+async def api_llm_inspector() -> JSONResponse:
+    """JSON snapshot of recent LLM reasoning, API calls, observations, and pipeline errors (same process as /stream)."""
+    with _llm_inspector_lock:
+        timeline = list(_llm_inspector_timeline)
+    return JSONResponse(
+        {
+            "timeline": timeline,
+            "timeline_count": len(timeline),
+            "effects_reference": llm_effects_reference(),
+            "note": "Buffer is cleared when a new /stream starts. Open this page or poll this URL while a stream is running.",
+        }
+    )
+
+
+@app.get("/llm-inspector")
+async def llm_inspector_page() -> FileResponse:
+    path = _UI_DIR / "llm_inspector.html"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="ui/llm_inspector.html not found")
+    return FileResponse(path, media_type="text/html")
+
+
 @app.get("/stream")
 async def stream(
     scenario: str = Query(
@@ -919,6 +1221,8 @@ async def stream(
 ) -> EventSourceResponse:
     if scenario not in ("temperature_conflict", "carbon_spike", "device_failure", "cli_bridge", "fused"):
         raise HTTPException(status_code=400, detail="Invalid scenario")
+
+    _reset_llm_inspector_timeline()
 
     loop = asyncio.get_running_loop()
     q: asyncio.Queue = asyncio.Queue()

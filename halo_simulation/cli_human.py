@@ -47,9 +47,13 @@ HALO human bridge — type commands (one per line):
   simulate-sleep              — sleep notice + evening meal (fused meal memory)
   leave                       — away + DepartureNotice
   return                      — home + ArrivalNotice + preferences
-  send-counter <deg> <nid>    — NegotiationCounter (nid from `status`)
-  send-accept <nid>
-  send-reject <nid> [reason]
+  send-counter <deg|min> <nid> [device_id] [attribute]
+                              — NegotiationCounter (nid from `status` or feed); defaults
+                                thermostat/temperature; shower: device_shower shower_minutes
+  send-accept <nid> [device_id] [attribute]
+  send-reject <nid> [device_thermostat|device_shower] [reason]
+  shower                       — ask ``device_shower`` to run a cycle as person_cli
+  preheat                      — tank ramp when carbon allows (see fused shower agent)
   status                      — snapshot (includes pending negotiation id)
   quit                        — stop simulation thread
 """

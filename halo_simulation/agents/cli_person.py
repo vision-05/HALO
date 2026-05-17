@@ -1,4 +1,4 @@
-"""CLI-controlled advocator: manual thermostat negotiation responses."""
+"""CLI-controlled advocator: manual negotiation responses (thermostat and shower)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,8 @@ class CliPersonAgent(PersonAgent):
     Like ``PersonAgent`` but:
 
     - **manual_negotiation** (default True): does not auto-reply to ``NegotiationProposal`` —
-      use inject ``send_counter`` / ``send_accept`` / ``send_reject``.
+      use inject ``send_counter`` / ``send_accept`` / ``send_reject`` (include ``device_id`` /
+      ``attribute`` for shower duration vs thermostat temperature when not using defaults).
     - **manual_schedule** (default True): no simulated wake / leave / return / sleep — presence
       and preference broadcasts come only from inject (``set_pref``, ``leave``, ``return``).
       Schedule dict is retained only for learning helpers that read ``sleep`` / leave-return hints.
@@ -107,7 +108,12 @@ class CliPersonAgent(PersonAgent):
                 "attribute": pl.get("attribute", "temperature"),
                 "round": pl.get("round"),
             }
-            logger.info("CliPersonAgent %s: awaiting manual reply for nid=%s", self.agent_id, self._pending_negotiation.get("negotiation_id"))
+            logger.info(
+                "CliPersonAgent %s: awaiting manual reply for nid=%s attr=%s",
+                self.agent_id,
+                self._pending_negotiation.get("negotiation_id"),
+                self._pending_negotiation.get("attribute"),
+            )
             return
         super()._handle_message(msg)
 
@@ -134,6 +140,7 @@ class CliPersonAgent(PersonAgent):
         self._last_leave_minute = float(self.env.now % config.MINUTES_PER_DAY)
         self._state["is_home"] = False
         self._state["comfort_weight"] = config.AWAY_COMFORT_WEIGHT
+        self._broadcast_preferences()
         m = Message.create(
             self.agent_id,
             "broadcast",

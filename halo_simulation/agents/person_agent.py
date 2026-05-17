@@ -14,6 +14,7 @@ from halo_simulation import config
 from halo_simulation.agents.base_agent import BaseAgent
 from halo_simulation.learning.preference_model import PreferenceModel
 from halo_simulation.metrics.collector import LearningEvent, MetricsCollector
+from halo_simulation.negotiation import protocol
 from halo_simulation.negotiation.message import Message, MessageTypes
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,7 @@ class PersonAgent(BaseAgent):
             self._last_leave_minute = float(abs_t % config.MINUTES_PER_DAY)
             self._state["is_home"] = False
             self._state["comfort_weight"] = config.AWAY_COMFORT_WEIGHT
+            self._broadcast_preferences()
             m = Message.create(
                 self.agent_id,
                 "broadcast",
@@ -195,7 +197,7 @@ class PersonAgent(BaseAgent):
             self._respond_negotiation(msg)
         elif msg.msg_type == MessageTypes.NegotiationResolved:
             pl = msg.payload
-            if pl.get("attribute") == "temperature":
+            if pl.get("attribute", "temperature") == "temperature":
                 self.record_resolved_temperature(float(pl.get("final_value", self._last_declared_temp)))
         elif msg.msg_type == MessageTypes.ActuationCommand:
             pass
@@ -237,14 +239,14 @@ class PersonAgent(BaseAgent):
         nid = pl.get("negotiation_id", "")
         device_id = pl.get("device_id", "")
         attr = pl.get("attribute", "temperature")
-        pref = float(self._state.get("preferred_temperature", 21.0))
-        tol = max(
-            config.TEMPERATURE_TOLERANCE,
-            self.preference_model.tolerance_from_bayesian(),
-        )
         recipient = msg.sender_id
 
         if attr == "temperature":
+            pref = float(self._state.get("preferred_temperature", 21.0))
+            tol = max(
+                config.TEMPERATURE_TOLERANCE,
+                self.preference_model.tolerance_from_bayesian(),
+            )
             if proposed < config.THERMOSTAT_MIN:
                 out = Message.create(
                     self.agent_id,
@@ -271,6 +273,47 @@ class PersonAgent(BaseAgent):
                     config.THERMOSTAT_MIN,
                     min(config.THERMOSTAT_MAX, counter_val),
                 )
+                out = Message.create(
+                    self.agent_id,
+                    recipient,
+                    MessageTypes.NegotiationCounter,
+                    {
+                        "negotiation_id": nid,
+                        "counter_value": counter_val,
+                        "device_id": device_id,
+                        "attribute": attr,
+                    },
+                    self.env.now,
+                )
+            self.send(recipient, out)
+            return
+
+        if attr == "shower_minutes":
+            pref = float(protocol.shower_minutes_from_comfort_temp(float(self._state.get("preferred_temperature", 21.0))))
+            tol = float(config.SHOWER_MINUTES_TOLERANCE)
+            lo = float(config.SHOWER_DURATION_MIN_MINUTES)
+            hi = float(config.SHOWER_DURATION_MAX_MINUTES)
+            if proposed < lo:
+                out = Message.create(
+                    self.agent_id,
+                    recipient,
+                    MessageTypes.NegotiationReject,
+                    {"negotiation_id": nid, "reason": "below_min_safe", "device_id": device_id},
+                    self.env.now,
+                )
+                self.send(recipient, out)
+                return
+            if abs(proposed - pref) <= tol:
+                out = Message.create(
+                    self.agent_id,
+                    recipient,
+                    MessageTypes.NegotiationAccept,
+                    {"negotiation_id": nid, "device_id": device_id},
+                    self.env.now,
+                )
+            else:
+                counter_val = (proposed + pref) / 2.0
+                counter_val = max(lo, min(hi, counter_val))
                 out = Message.create(
                     self.agent_id,
                     recipient,

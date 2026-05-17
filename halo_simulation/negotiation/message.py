@@ -40,6 +40,9 @@ class MessageTypes:
     GrocerySignalUpdate = "GrocerySignalUpdate"
     WeatherForecastAlert = "WeatherForecastAlert"
     LLMObservationUpdate = "LLMObservationUpdate"
+    WaterShowerIntent = "WaterShowerIntent"
+    WaterPreheatIntent = "WaterPreheatIntent"
+    WaterServiceNotice = "WaterServiceNotice"
 
 
 @dataclass

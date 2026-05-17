@@ -144,6 +144,9 @@ class LLMSpecialistAgent(SpecialistAgent):
         if mt == MessageTypes.NegotiationResolved:
             val = pl.get("final_value", "?")
             it = pl.get("iterations", "?")
+            attr = str(pl.get("attribute", "temperature") or "temperature")
+            if attr == "shower_minutes":
+                return f"Shower negotiation resolved at {val} minutes after {it} rounds"
             return f"Thermostat negotiation resolved at {val}°C after {it} rounds"
         if mt == MessageTypes.NegotiationFailed:
             return "Thermostat negotiation failed, fallback applied"
@@ -246,6 +249,11 @@ Available external data sources you may request:
 
 When choosing grocery_prices, suggest search_terms that reflect staple ingredients shared across
 occupants' favorite meals they have not eaten recently (perishable staples like meat/dairy produce).
+
+Important: Your "reason" must match the recent bus summaries. Do not say "freezing", "near freezing",
+or "cold snap" unless those summaries show outdoor temperatures roughly below 3°C or explicitly
+describe such conditions. Mild cool weather (e.g. 10–16°C) is not freezing. The severe_weather
+API is still useful for rain timing and hourly bands even when it is not cold.
 
 Based on the recent events, answer these questions:
 1. Is any external data source relevant right now? (yes/no)

@@ -31,6 +31,7 @@ class NegotiationEvent:
     carbon_intensity: float
     fallback_used: bool
     participant_preferences: dict[str, float] | None = None
+    preference_attribute: str | None = None
 
 
 @dataclass
