@@ -26,8 +26,6 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONPATH="/app"
 
-WORKDIR /app
-
 
 FROM base AS test
 COPY --from=test-builder /opt/venv /opt/venv
@@ -74,3 +72,10 @@ FROM base AS mocktv
 COPY generic/src/ ./generic/src/
 COPY discovery/src/ ./discovery/src/
 ENTRYPOINT ["python", "generic/src/mock_tv_agent.py"]
+FROM base AS washing
+
+COPY generic/src/ ./generic/src/
+COPY discovery/src/ ./discovery/src/
+COPY generic/ ./generic/
+
+ENTRYPOINT [ "python", "generic/src/washing_machine.py" ]
