@@ -26,8 +26,6 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONPATH="/app"
 
-WORKDIR /app
-
 
 FROM base AS test
 COPY --from=test-builder /opt/venv /opt/venv
@@ -63,9 +61,10 @@ COPY discovery/src/ ./discovery/src/
 
 ENTRYPOINT [ "python", "generic/src/weather.py" ]
 
-FROM base AS thermostat
+FROM base AS washing
 
 COPY generic/src/ ./generic/src/
 COPY discovery/src/ ./discovery/src/
+COPY generic/ ./generic/
 
-ENTRYPOINT ["python", "generic/src/thermostat.py"]
+ENTRYPOINT [ "python", "generic/src/washing_machine.py" ]

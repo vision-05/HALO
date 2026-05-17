@@ -57,7 +57,7 @@ class LanguageAgent(BaseAgent):
             "available_device_schemas": self.schemas
         }
 
-        response = self.get_resp_fn(instruction)
+        response = await self.get_resp_fn(instruction)
         if response[0] == "`":
             response = response[7:-3]
         human_resp = json.loads(response)
@@ -198,9 +198,8 @@ You MUST think step-by-step before making your decision. Output ONLY valid JSON.
 
         response = await self.get_resp_fn(text)
         logger.debug(response)
-        if response[0] == "`":
-            response = response[7:-3]
-        human_resp = json.loads(response)
+        cleaned_response = response.replace("```json", "").replace("```", "").strip()
+        human_resp = json.loads(cleaned_response)
         await update.message.reply_text(human_resp["telegram_reply"])
         net_commands = human_resp.get("network_payload", None)
         commands = net_commands
