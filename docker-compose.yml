@@ -311,6 +311,37 @@ services:
       - dozzle_data:/data
     ports:
       - 8080:8080
+
+
+  smartlight:
+    build:
+      context: ./agents
+      dockerfile: generic/Dockerfile
+      target: smartlight
+    network_mode: host
+    volumes:
+      - ./agents/generic/src:/app/generic/src
+      - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
+    environment:
+      - HALO_HTTP_KEY=${HALO_HTTP_KEY}
+      - LIGHT_ESP32_HOST=smartlight.local
+      - PYTHONUNBUFFERED=1
+
+  mocktv:
+    build:
+      context: ./agents
+      dockerfile: generic/Dockerfile
+      target: mocktv
+    network_mode: host
+    volumes:
+      - ./agents/generic/src:/app/generic/src
+      - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
+    environment:
+      - HALO_HTTP_KEY
+      - TV_ESP32_HOST=192.168.7.87  
+      - PYTHONUNBUFFERED=1
+
 volumes:
   dozzle_data:
-      

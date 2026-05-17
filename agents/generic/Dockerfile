@@ -62,3 +62,15 @@ COPY generic/src/ ./generic/src/
 COPY discovery/src/ ./discovery/src/
 
 ENTRYPOINT [ "python", "generic/src/weather.py" ]
+
+FROM base AS smartlight
+
+COPY generic/src/ ./generic/src/
+COPY discovery/src/ ./discovery/src/
+
+ENTRYPOINT ["python", "generic/src/smart_light.py"]
+
+FROM base AS mocktv
+COPY generic/src/ ./generic/src/
+COPY discovery/src/ ./discovery/src/
+ENTRYPOINT ["python", "generic/src/mock_tv_agent.py"]
