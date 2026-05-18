@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import matplotlib
@@ -63,6 +63,8 @@ class LLMReasoningEvent:
     api_id: str
     reason: str
     llm_latency_ms: float
+    # All API ids queued this cycle (deduped, max length enforced by agent). Empty if none.
+    api_ids: list[str] = field(default_factory=list)
 
 
 @dataclass

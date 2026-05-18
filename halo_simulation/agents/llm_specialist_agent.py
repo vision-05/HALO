@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from typing import Any, Generator
@@ -29,6 +30,76 @@ from halo_simulation.metrics.collector import (
 from halo_simulation.negotiation.message import Message, MessageBus, MessageTypes
 
 logger = logging.getLogger(__name__)
+
+# Max distinct external APIs to run per reasoning cycle (HTTP + interpret each).
+_MAX_REASONING_API_IDS = 4
+
+# GOV.UK fuel pages are large; keep enough HTML for interpret while bounding memory.
+_FUEL_RAW_HTML_CAP = 250_000
+_FUEL_INTERPRET_PROMPT_CHARS = 48_000
+_FUEL_CSV_BODY_CAP = 600_000
+_FUEL_CSV_PROMPT_TAIL_CHARS = 38_000
+_FUEL_WEEKLY_CSV_RE = re.compile(
+    r"https://assets\.publishing\.service\.gov\.uk/media/[A-Za-z0-9]+/weekly_road_fuel_prices_\d+\.csv"
+)
+
+
+def _strip_scripts_styles_noscript(html: str) -> str:
+    """Remove heavy/irrelevant blocks so price tables fit in the interpret window."""
+    h = re.sub(r"(?is)<script[^>]*>.*?</script>", "", html)
+    h = re.sub(r"(?is)<style[^>]*>.*?</style>", "", h)
+    h = re.sub(r"(?is)<noscript[^>]*>.*?</noscript>", "", h)
+    return h
+
+
+def _fuel_html_excerpt_for_prompt(html: str, max_chars: int = _FUEL_INTERPRET_PROMPT_CHARS) -> str:
+    """Prefer a slice around pump-price keywords so the LLM sees figures, not page chrome."""
+    h = _strip_scripts_styles_noscript(html)
+    if not h.strip():
+        return ""
+    low = h.lower()
+    # Longer / more specific anchors first (early "ULSP" in intro text is not the data table).
+    anchors = (
+        "weekly_road_fuel_prices",
+        "weekly road fuel prices",
+        "gem-c-attachment",
+        "pence/litre",
+        "pence per litre",
+        "pump price",
+        "road fuel",
+        "ulsd",
+        "ulsp",
+        "diesel",
+        "unleaded",
+    )
+    start = 0
+    for kw in anchors:
+        i = low.find(kw)
+        if i != -1:
+            start = max(0, i - 4000)
+            break
+    chunk = h[start : start + max_chars]
+    if not chunk.strip():
+        chunk = h[:max_chars]
+    return f"HTML excerpt ({len(chunk)} chars of {len(h)} after stripping scripts/styles):\n{chunk}"
+
+
+def _fuel_csv_tail_for_prompt(csv_text: str, max_chars: int = _FUEL_CSV_PROMPT_TAIL_CHARS) -> str:
+    """GOV.UK publishes a long history CSV; send header + recent rows so the latest week is visible."""
+    lines = csv_text.strip().splitlines()
+    if not lines:
+        return ""
+    header = lines[0]
+    data = lines[1:]
+    tail = data[-200:] if len(data) > 200 else data
+    body = "\n".join([header] + tail)
+    if len(body) > max_chars:
+        body = body[-max_chars:]
+    return f"CSV tail ({len(body)} chars; use the **last** data row as the latest week):\n{body}"
+
+
+def _non_fuel_raw_str_for_prompt(raw_response: Any, max_chars: int = 12_000) -> str:
+    return json.dumps(raw_response, default=str)[:max_chars]
 
 _CONTEXT_SKIP_TYPES: frozenset[str] = frozenset(
     {
@@ -174,6 +245,10 @@ class LLMSpecialistAgent(SpecialistAgent):
             if isinstance(fm, list) and fm:
                 extra = f" · favorite meals: {', '.join(str(x) for x in fm[:5])}"
             return f"Occupant {who} declared preferred temp {val}°C{extra}"
+        if mt == MessageTypes.DishwasherRunRequest:
+            who = pl.get("requester_id", sender)
+            u = pl.get("urgency", "?")
+            return f"Washing machine run requested by {who} (urgency={u})"
         if mt == MessageTypes.GrocerySignalUpdate:
             return f"Grocery signal: {pl.get('summary', 'update')}"
         return f"{mt} from {sender}"
@@ -257,20 +332,53 @@ API is still useful for rain timing and hourly bands even when it is not cold.
 
 Based on the recent events, answer these questions:
 1. Is any external data source relevant right now? (yes/no)
-2. If yes, which one? (use the exact api_id from the list above, or "none")
-3. Why? (one sentence explanation)
-4. If api_id is grocery_prices, provide grocery_search_terms: a short search phrase for Open Food Facts (else empty string).
+2. If yes, which ones? Return api_ids as a JSON array of distinct api_id strings from the list above
+   (up to {_MAX_REASONING_API_IDS} entries, most urgent first). Use [] if none. You may request multiple
+   sources in one cycle when they are all justified (e.g. hourly forecast + grocery staples).
+   Legacy: a single string field "api_id" is also accepted if you only choose one.
+3. Why? (one sentence explanation covering the batch)
+4. If grocery_prices is among api_ids, provide grocery_search_terms: a short search phrase for Open Food Facts (else empty string).
 
 Respond in this exact JSON format and nothing else:
-{{"relevant": true/false, "api_id": "string or none", "reason": "string", "grocery_search_terms": "string"}}"""
+{{"relevant": true/false, "api_ids": ["api_id_1", "..."], "reason": "string", "grocery_search_terms": "string"}}"""
 
     def _normalize_llm_result(self, raw: dict[str, Any]) -> dict[str, Any]:
         rel = raw.get("relevant")
-        relevant = bool(rel) if isinstance(rel, bool) else str(rel).lower() in ("true", "yes", "1")
-        api_id = str(raw.get("api_id", "none")).strip()
+        relevant_flag = bool(rel) if isinstance(rel, bool) else str(rel).lower() in ("true", "yes", "1")
         reason = str(raw.get("reason", "")).strip()
         groc = str(raw.get("grocery_search_terms", "")).strip()
-        return {"relevant": relevant, "api_id": api_id, "reason": reason, "grocery_search_terms": groc}
+
+        ids: list[str] = []
+        raw_ids = raw.get("api_ids")
+        if isinstance(raw_ids, list):
+            for x in raw_ids:
+                s = str(x).strip()
+                if s and s.lower() not in ("none", ""):
+                    ids.append(s)
+        single = str(raw.get("api_id", "none")).strip()
+        if single.lower() not in ("none", ""):
+            if single not in ids:
+                ids.insert(0, single)
+
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for x in ids:
+            xl = x.lower()
+            if xl in seen:
+                continue
+            seen.add(xl)
+            deduped.append(x)
+        deduped = deduped[:_MAX_REASONING_API_IDS]
+
+        primary = deduped[0] if deduped else "none"
+        relevant = relevant_flag and len(deduped) > 0
+        return {
+            "relevant": relevant,
+            "api_id": primary,
+            "api_ids": deduped,
+            "reason": reason,
+            "grocery_search_terms": groc,
+        }
 
     def _record_failure(
         self,
@@ -308,13 +416,13 @@ Respond in this exact JSON format and nothing else:
 
         params = dict(api_def.params)
         if api_id == "news_disruptions":
-            key = os.getenv("NEWSAPI_KEY", "")
+            key = (os.getenv("NEWSAPI_KEY") or os.getenv("NEWS_API") or "").strip()
             params["apiKey"] = key
             if not key:
                 self._record_failure(
                     "config",
                     api_id,
-                    "NEWSAPI_KEY not set — news skipped",
+                    "NEWSAPI_KEY or NEWS_API not set — news skipped",
                     None,
                 )
                 return None
@@ -332,11 +440,30 @@ Respond in this exact JSON format and nothing else:
             logger.warning("LLMSpecialistAgent: API %s failed: %s", api_id, e)
             return None
 
-        latency_ms = (time.perf_counter() - t0) * 1000.0
-
         raw_body: dict[str, Any]
         if api_id == "fuel_prices":
-            raw_body = {"raw_html": response.text[:8000]}
+            text = response.text
+            if len(text) > _FUEL_RAW_HTML_CAP:
+                text = text[:_FUEL_RAW_HTML_CAP]
+            csv_url = ""
+            csv_text = ""
+            m = _FUEL_WEEKLY_CSV_RE.search(text)
+            if m:
+                csv_url = m.group(0)
+                try:
+                    r_csv = httpx.get(csv_url, timeout=12.0)
+                    r_csv.raise_for_status()
+                    ct = r_csv.text
+                    if len(ct) > _FUEL_CSV_BODY_CAP:
+                        ct = ct[-_FUEL_CSV_BODY_CAP:]
+                    csv_text = ct
+                except Exception as e:
+                    logger.warning("LLMSpecialistAgent: fuel_prices CSV fetch failed (%s): %s", csv_url, e)
+            raw_body = {
+                "page_html": text,
+                "weekly_csv_url": csv_url,
+                "weekly_csv_text": csv_text,
+            }
         else:
             try:
                 raw_body = response.json()
@@ -344,11 +471,15 @@ Respond in this exact JSON format and nothing else:
                 self._record_failure("fetch", api_id, "Response not JSON", str(e))
                 return None
 
-        self._api_registry.mark_called(api_id, current_sim_time)
+        latency_ms = (time.perf_counter() - t0) * 1000.0
 
         observation = self._interpret_api_response(api_def, raw_body)
         if not observation:
             return None
+
+        # Cooldown only after a successful interpret — otherwise the next cycle could not retry
+        # for hours (e.g. fuel_prices 240 sim min) despite never emitting a bus message.
+        self._api_registry.mark_called(api_id, current_sim_time)
 
         observation["api_id"] = api_id
         observation["latency_ms"] = round(latency_ms, 1)
@@ -356,7 +487,25 @@ Respond in this exact JSON format and nothing else:
         return observation
 
     def _interpret_api_response(self, api_def: ApiDefinition, raw_response: Any) -> dict[str, Any] | None:
-        raw_str = json.dumps(raw_response, default=str)[:2000]
+        if api_def.api_id == "fuel_prices":
+            csv_tail = ""
+            page_html = ""
+            if isinstance(raw_response, dict):
+                page_html = str(raw_response.get("page_html") or "")
+                csv_tail = _fuel_csv_tail_for_prompt(
+                    str(raw_response.get("weekly_csv_text") or "")
+                )
+            parts: list[str] = []
+            if csv_tail.strip():
+                parts.append(csv_tail)
+            html_ex = _fuel_html_excerpt_for_prompt(page_html, max_chars=12_000)
+            if html_ex.strip():
+                parts.append("GOV.UK page HTML excerpt (figures may be missing):\n" + html_ex)
+            raw_str = "\n\n".join(parts) if parts else "(no fuel CSV or HTML)"
+            if len(raw_str) > 52_000:
+                raw_str = raw_str[:52_000]
+        else:
+            raw_str = _non_fuel_raw_str_for_prompt(raw_response)
         schema_str = _schema_lines_for_prompt(api_def.result_schema)
         prompt = f"""You are interpreting a raw API response for a smart home simulation.
 
@@ -375,7 +524,7 @@ Additional fields to always include:
 - "severity": "low" | "medium" | "high" — how much should this affect agent behaviour
 - "halo_message_type": "{api_def.halo_message_type}"
 - For grocery_prices: include "products" as a list of objects with product_name when possible
-- For fuel HTML: estimate petrol_pence_per_litre and diesel_pence_per_litre if you can infer from text, else use 0
+- For fuel_prices: if a CSV tail is present, use the **last** dated row — map the ULSP pump price column to petrol_pence_per_litre and the ULSD pump price column to diesel_pence_per_litre (pence/litre as numbers). If only HTML is present, infer from visible numbers, else use 0
 
 Return ONLY valid JSON. No explanation, no markdown fences."""
 
@@ -419,22 +568,26 @@ Return ONLY valid JSON. No explanation, no markdown fences."""
         self._last_reasoning_at = float(self.env.now)
 
         snapshot = [dict(e) for e in self._context_window]
+        api_ids_res = list(result.get("api_ids") or [])
+        primary = str(result.get("api_id", "none")).strip()
         event = LLMReasoningEvent(
             timestamp=float(self.env.now),
             context_snapshot=snapshot,
             relevant=result["relevant"],
-            api_id=result["api_id"],
+            api_id=primary,
             reason=result["reason"],
             llm_latency_ms=float(latency_ms),
+            api_ids=api_ids_res,
         )
 
-        if result["relevant"] and result["api_id"].lower() not in ("none", ""):
-            self._pending_api_calls.append(result["api_id"])
-            logger.info(
-                "LLM queued external API id=%s (pending=%s)",
-                result["api_id"],
-                self._pending_api_calls,
-            )
+        if result["relevant"]:
+            for aid in api_ids_res:
+                self._pending_api_calls.append(aid)
+                logger.info(
+                    "LLM queued external API id=%s (pending=%s)",
+                    aid,
+                    self._pending_api_calls,
+                )
 
         pending_snapshot = list(self._pending_api_calls)
         if self._metrics:
@@ -452,7 +605,8 @@ Return ONLY valid JSON. No explanation, no markdown fences."""
             "sim_time": int(self.env.now),
             "context_size": len(self._context_window),
             "relevant": result["relevant"],
-            "api_id": result["api_id"],
+            "api_id": primary,
+            "api_ids": api_ids_res,
             "reason": result["reason"],
             "pending_calls": pending_snapshot,
         }

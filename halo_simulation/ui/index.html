@@ -517,6 +517,62 @@
       padding: 0;
       line-height: 1.35;
     }
+    #humanInjectStrip .hi-actions-subtitle {
+      font-size: 0.76rem;
+      font-weight: 600;
+      opacity: 0.92;
+      margin-bottom: 0.35rem;
+    }
+    #humanInjectStrip .dw-flow-wrap {
+      margin: 0 0 0.45rem;
+      padding: 0.35rem 0.4rem;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      background: #0d1117;
+    }
+    #humanInjectStrip .dw-flow-track {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.12rem 0.2rem;
+      font-size: 0.65rem;
+      line-height: 1.2;
+    }
+    #humanInjectStrip .dw-flow-node {
+      padding: 0.1rem 0.32rem;
+      border-radius: 4px;
+      border: 1px solid #30363d;
+      color: var(--muted);
+      opacity: 0.42;
+      white-space: nowrap;
+      transition: opacity 0.15s, border-color 0.15s, background 0.15s;
+    }
+    #humanInjectStrip .dw-flow-node.dw-flow-done {
+      opacity: 0.72;
+      border-color: #444c56;
+    }
+    #humanInjectStrip .dw-flow-node.dw-flow-active {
+      opacity: 1;
+      font-weight: 600;
+      color: #e6edf3;
+      border-color: #79d4c9;
+      background: rgba(121, 212, 201, 0.12);
+    }
+    #humanInjectStrip .dw-flow-node.dw-flow-active.dw-flow-warn {
+      border-color: #fb923c;
+      background: rgba(251, 146, 60, 0.1);
+    }
+    #humanInjectStrip .dw-flow-arrow {
+      opacity: 0.28;
+      user-select: none;
+      font-size: 0.62rem;
+    }
+    #humanInjectStrip .dw-flow-caption {
+      margin: 0.32rem 0 0;
+      font-size: 0.64rem;
+      color: var(--muted);
+      line-height: 1.3;
+    }
     #injectFeedback {
       flex: 0 1 16rem;
       max-width: 100%;
@@ -642,6 +698,15 @@
             <button type="button" id="injectLeave" class="hi-btn hi-btn-ghost">Leave</button>
             <button type="button" id="injectReturn" class="hi-btn hi-btn-ghost">Return</button>
           </div>
+          <div class="hi-field-row">
+            <div class="hi-field">
+              <label for="injectShowerPref">Shower (min)</label>
+              <div style="display:flex;align-items:center;gap:0.28rem">
+                <input type="number" id="injectShowerPref" step="1" min="5" max="25" value="15" />
+              </div>
+            </div>
+            <button type="button" id="injectSetShowerPref" class="hi-btn hi-btn-primary">Apply</button>
+          </div>
         </div>
       </div>
       <div class="hi-card" id="injectThermostatCard">
@@ -669,12 +734,41 @@
           </div>
         </div>
       </div>
-      <div class="hi-card" id="injectShowerCard" style="display:none">
-        <div class="hi-card-title">Hot water</div>
+      <div class="hi-card" id="injectActionsCard" style="display:none">
+        <div class="hi-card-title">Actions</div>
         <div class="hi-card-body">
-          <div class="hi-field-row">
-            <button type="button" id="injectShower" class="hi-btn hi-btn-secondary">Shower</button>
-            <button type="button" id="injectPreheat" class="hi-btn hi-btn-secondary">Preheat</button>
+          <div id="injectHotWaterBlock" style="display:none">
+            <div class="hi-actions-subtitle">Hot water</div>
+            <div class="hi-field-row">
+              <button type="button" id="injectShower" class="hi-btn hi-btn-secondary">Shower</button>
+              <button type="button" id="injectPreheat" class="hi-btn hi-btn-secondary">Preheat</button>
+            </div>
+          </div>
+          <div id="injectDishwasherBlock" style="display:none">
+            <div class="hi-actions-subtitle">Washing machine</div>
+            <div id="dishwasherFlowDiagram" class="dw-flow-wrap" style="display:none" aria-label="Washing machine run pipeline">
+              <div class="dw-flow-track">
+                <span class="dw-flow-node" data-flow-i="0">Idle</span>
+                <span class="dw-flow-arrow" aria-hidden="true">→</span>
+                <span class="dw-flow-node" data-flow-i="1">Request</span>
+                <span class="dw-flow-arrow" aria-hidden="true">→</span>
+                <span class="dw-flow-node" data-flow-i="2">Schedule</span>
+                <span class="dw-flow-arrow" aria-hidden="true">→</span>
+                <span class="dw-flow-node" data-flow-i="3">Negotiate</span>
+                <span class="dw-flow-arrow" aria-hidden="true">→</span>
+                <span class="dw-flow-node" data-flow-i="4">Wait</span>
+                <span class="dw-flow-arrow" aria-hidden="true">→</span>
+                <span class="dw-flow-node" data-flow-i="5">Run</span>
+              </div>
+              <p id="dishwasherFlowCaption" class="dw-flow-caption"></p>
+            </div>
+            <div class="hi-field-row" style="align-items:flex-end;flex-wrap:wrap;gap:0.5rem">
+              <div class="hi-field">
+                <label for="injectDishwasherUrgency">Urgency (0–1, optional)</label>
+                <input type="number" id="injectDishwasherUrgency" step="0.05" min="0" max="1" value="0.55" style="width:6rem" />
+              </div>
+              <button type="button" id="injectDishwasher" class="hi-btn hi-btn-secondary">Request run</button>
+            </div>
           </div>
         </div>
       </div>
@@ -686,7 +780,8 @@
         <li>Open this page from that server (e.g. <code>http://127.0.0.1:8000</code>) or set <code>&lt;meta name="halo-api-origin" content="http://127.0.0.1:8000"&gt;</code> if the UI is in a preview tab.</li>
         <li>Scenario <strong>CLI Human Bridge</strong> or <strong>Fused (full demo)</strong> → <strong>Run</strong>. Wait until <strong>Sim:</strong> shows a time (not —:—).</li>
         <li><strong>Apply / Leave / Return</strong> while the stream is open. When <strong>NegotiationProposal → person_cli</strong> arrives, the <strong>Thermostat negotiation</strong> card shows a short green hint, fills the negotiation id, highlights <strong>Accept / Counter / Reject</strong>, and pre-fills the counter field. After you send one of those, the hint and highlights clear. Another round may prompt again.</li>
-        <li>Shower proposals use <strong>minutes</strong> (feed shows <code>shower_minutes</code>; You card shows “shower negotiation”). With <strong>Fused</strong>, <strong>Shower</strong> / <strong>Preheat</strong> hit the tank path; after a shower, <strong>auto preheat</strong> may start if the tank is low and carbon is under the cap.</li>
+        <li><strong>Actions</strong> (when the scenario includes them): <strong>Hot water</strong> — Shower / Preheat; <strong>Washing machine</strong> — urgency 0–1 (default 0.55) and <strong>Request run</strong> (<code>request_dishwasher</code> inject).</li>
+        <li>Shower rounds use <strong>minutes</strong> (<code>shower_minutes</code>); on Fused, <strong>auto preheat</strong> may follow a shower when the tank is low and carbon allows.</li>
         <li>If Sim: still moves but inject says the stream is gone, the run already finished and the UI is draining the last buffered events — click <strong>Run</strong> again.</li>
         <li><strong>Human-in-the-loop:</strong> use <strong>1–2 Days</strong>. Default <strong>Pace 0</strong> is fastest; set <strong>Pace ~60</strong> if you want the run to last about a minute wall-clock so inject is easier to follow (the sim thread sleeps between chunks, so higher Pace also delays inject handling).</li>
       </ol>
@@ -732,43 +827,6 @@
           <canvas id="chartWeather"></canvas>
         </div>
         <div id="weatherChartErr" style="display:none;font-size:0.72rem;color:#f85149;margin-top:0.25rem;"></div>
-      </div>
-      <div style="border: 0.5px solid #30363d; border-radius: 8px; overflow: hidden; margin-top: 1rem;">
-        <div onclick="togglePanel('reasoning')" style="padding: 10px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--panel);">
-          <span style="font-size: 13px; font-weight: 500;">Agent reasoning</span>
-          <span id="reasoning-chevron">▾</span>
-        </div>
-        <div id="reasoning-panel" data-collapsed="0" style="padding: 0 16px; max-height: 300px; overflow-y: auto;">
-          <p style="margin:0;padding:8px 0 0;font-size:11px;color:var(--muted);">
-            Full context + effect hints: open <a href="/llm-inspector" target="_blank" rel="noopener">/llm-inspector</a> or <code>GET /api/llm-inspector</code> while this stream runs.
-          </p>
-          <div id="reasoning-feed"></div>
-          <p id="reasoning-empty" style="color: var(--muted); font-size: 13px; padding: 12px 0;">
-            Waiting for first reasoning cycle (every 60 sim minutes)...
-          </p>
-        </div>
-      </div>
-      <div style="border: 0.5px solid #30363d; border-radius: 8px; overflow: hidden; margin-top: 1rem;">
-        <div onclick="togglePanel('impact')" style="padding: 10px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--panel);">
-          <span style="font-size: 13px; font-weight: 500;">Real-world impact log</span>
-          <span id="impact-chevron">▾</span>
-        </div>
-        <div id="impact-panel" data-collapsed="0" style="padding: 0 12px; max-height: 250px; overflow-y: auto;">
-          <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
-            <thead>
-              <tr style="color: var(--muted); border-bottom: 0.5px solid #30363d;">
-                <th style="text-align:left; padding: 6px 4px;">Time</th>
-                <th style="text-align:left; padding: 6px 4px;">API</th>
-                <th style="text-align:left; padding: 6px 4px;">Effect</th>
-                <th style="text-align:left; padding: 6px 4px;">Sev</th>
-              </tr>
-            </thead>
-            <tbody id="impact-log-body"></tbody>
-          </table>
-          <p id="impact-empty" style="color: var(--muted); font-size: 13px; padding: 12px 0;">
-            No LLM-driven observations yet...
-          </p>
-        </div>
       </div>
     </div>
   </div>
@@ -868,43 +926,6 @@
       if (el) el.classList.toggle('hidden', !show);
     }
 
-    function togglePanel(which) {
-      if (which === 'reasoning') {
-      const p = document.getElementById('reasoning-panel');
-      const ch = document.getElementById('reasoning-chevron');
-      if (!p || !ch) return;
-      const collapsed = p.dataset.collapsed === '1';
-      if (collapsed) {
-        p.style.display = '';
-        p.style.maxHeight = '300px';
-        p.style.overflowY = 'auto';
-        ch.textContent = '▾';
-        p.dataset.collapsed = '0';
-      } else {
-        p.style.display = 'none';
-        ch.textContent = '▸';
-        p.dataset.collapsed = '1';
-      }
-      return;
-      }
-      if (which === 'impact') {
-        const p = document.getElementById('impact-panel');
-        const ch = document.getElementById('impact-chevron');
-        if (!p || !ch) return;
-        const collapsed = p.dataset.collapsed === '1';
-        if (collapsed) {
-          p.style.display = '';
-          p.style.maxHeight = '250px';
-          ch.textContent = '▾';
-          p.dataset.collapsed = '0';
-        } else {
-          p.style.display = 'none';
-          ch.textContent = '▸';
-          p.dataset.collapsed = '1';
-        }
-      }
-    }
-
     function reasoningEscapeHtml(s) {
       return String(s)
         .replace(/&/g, '&amp;')
@@ -923,61 +944,6 @@
     function llmApiDisplayLabel(apiId) {
       const id = String(apiId || '').trim();
       return LLM_API_LABELS[id] || id;
-    }
-
-    function addReasoningEntry(d) {
-      const empty = document.getElementById('reasoning-empty');
-      const panel = document.getElementById('reasoning-feed');
-      if (!panel) return;
-      if (empty) empty.style.display = 'none';
-      const entry = document.createElement('div');
-      entry.style.padding = '8px 0';
-      entry.style.borderBottom = '0.5px solid #30363d';
-      entry.style.fontSize = '13px';
-      const relevantColor = d.relevant ? '#22c55e' : '#9ca3af';
-      const apiLabel =
-        d.api_id && d.api_id !== 'none'
-          ? `<span style="background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:4px;font-size:11px;" title="api_id: ${reasoningEscapeHtml(String(d.api_id))}">${reasoningEscapeHtml(
-              llmApiDisplayLabel(d.api_id),
-            )}</span>`
-          : '';
-      const hints = Array.isArray(d.pending_effect_hints)
-        ? d.pending_effect_hints
-            .map(
-              (h) =>
-                `<li style="font-size:11px;color:var(--muted);margin:2px 0;"><code>${reasoningEscapeHtml(String(h.api_id || ''))}</code> → <code>${reasoningEscapeHtml(String(h.halo_message_type || ''))}</code>: ${reasoningEscapeHtml(String(h.effect_summary || ''))}</li>`,
-            )
-            .join('')
-        : '';
-      const effectLine =
-        d.sim_effect != null && String(d.sim_effect).trim() !== ''
-          ? `<div style="margin-top:6px;padding:6px 8px;background:#161b22;border-radius:4px;border:0.5px solid #30363d;font-size:11px;line-height:1.35;"><strong style="color:#79c0ff;">Outcome</strong> — ${reasoningEscapeHtml(String(d.sim_effect))}</div>`
-          : '';
-      const ctx = Array.isArray(d.context_snapshot) ? d.context_snapshot : [];
-      const ctxBlock =
-        ctx.length > 0
-          ? `<details style="margin-top:6px;"><summary style="cursor:pointer;color:var(--accent);font-size:11px;">Context (${ctx.length})</summary><pre style="margin:6px 0 0;padding:6px;background:#0d1117;border-radius:4px;font-size:10px;overflow:auto;max-height:160px;border:0.5px solid #30363d;">${reasoningEscapeHtml(
-              ctx
-                .map(
-                  (c) =>
-                    `[${c.sim_time_str || ''}] ${c.msg_type || ''} (${c.sender || ''}) — ${c.summary || ''}`,
-                )
-                .join('\n'),
-            )}</pre></details>`
-          : '';
-      entry.innerHTML = `
-        <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-          <span style="color:var(--muted)">${reasoningEscapeHtml(d.sim_time_str || '')}</span>
-          <span style="width:8px;height:8px;border-radius:50%;background:${relevantColor};display:inline-block;margin-top:4px;"></span>
-        </div>
-        <div style="margin-bottom:2px;">${reasoningEscapeHtml(String(d.reason || ''))}</div>
-        <div>${apiLabel}</div>
-        ${hints ? `<ul style="margin:4px 0 0 1rem;padding:0;">${hints}</ul>` : ''}
-        ${effectLine}
-        ${ctxBlock}
-      `;
-      panel.insertBefore(entry, panel.firstChild);
-      while (panel.children.length > 20) panel.removeChild(panel.lastChild);
     }
 
     function llmSeverityMarkerColor(severity) {
@@ -1082,34 +1048,6 @@
       while (panel.children.length > 25) panel.removeChild(panel.lastChild);
     }
 
-    function addImpactLogEntry(d) {
-      const empty = document.getElementById('impact-empty');
-      const body = document.getElementById('impact-log-body');
-      if (!body) return;
-      if (empty) empty.style.display = 'none';
-      const sev = String(d.severity || 'low').toLowerCase();
-      const severityColor =
-        sev === 'high' ? '#ef4444' : sev === 'medium' ? '#f59e0b' : '#22c55e';
-      const row = document.createElement('tr');
-      row.style.borderBottom = '0.5px solid #30363d';
-      row.innerHTML =
-        '<td style="padding:5px 4px;color:var(--muted);">' +
-        reasoningEscapeHtml(String(d.sim_time_str || '')) +
-        '</td><td style="padding:5px 4px;" title="api_id: ' +
-        reasoningEscapeHtml(String(d.api_id || '')) +
-        '">' +
-        reasoningEscapeHtml(llmApiDisplayLabel(d.api_id)) +
-        '</td><td style="padding:5px 4px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' +
-        reasoningEscapeHtml(String(d.summary || '')) +
-        '">' +
-        reasoningEscapeHtml(String(d.summary || '')) +
-        '</td><td style="padding:5px 4px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' +
-        severityColor +
-        ';"></span></td>';
-      body.insertBefore(row, body.firstChild);
-      while (body.children.length > 30) body.removeChild(body.lastChild);
-    }
-
     function syncThermostatOverlaySize() {
       const chart = document.getElementById('chartLine');
       const overlay = document.getElementById('chartLineLlmOverlay');
@@ -1208,7 +1146,7 @@
       { id: 'person_bob', name: 'Bob', type: 'person', role: 'bob' },
       { id: 'person_cli', name: 'CLI', type: 'person', role: 'cli' },
       { id: 'device_thermostat', name: 'Thermostat', type: 'device', role: 'thermostat' },
-      { id: 'device_dishwasher', name: 'Dishwasher', type: 'device', role: 'dishwasher' },
+      { id: 'device_dishwasher', name: 'Washing machine', type: 'device', role: 'dishwasher' },
       { id: 'specialist_carbon', name: 'Grid Carbon', type: 'specialist', role: 'carbon' },
       { id: 'specialist_weather', name: 'Weather', type: 'specialist', role: 'weather' },
     ];
@@ -1266,7 +1204,13 @@
       const lbl = document.getElementById('injectCounterDimLabel');
       if (!hint || !card || !actions || !nidEl) return;
       nidEl.value = String(detail.negotiation_id);
-      const attr = detail.attr === 'shower_minutes' ? 'shower_minutes' : 'temperature';
+      const ra = detail.attr != null ? String(detail.attr) : 'temperature';
+      const attr =
+        ra === 'shower_minutes'
+          ? 'shower_minutes'
+          : ra === 'dishwasher_delay'
+            ? 'dishwasher_delay'
+            : 'temperature';
       const pv = detail.proposed_value;
       if (attr === 'shower_minutes') {
         if (lbl) lbl.textContent = 'Counter (min)';
@@ -1275,6 +1219,14 @@
           cv.max = '25';
           cv.step = '0.5';
           if (typeof pv === 'number' && Number.isFinite(pv)) cv.value = String(pv);
+        }
+      } else if (attr === 'dishwasher_delay') {
+        if (lbl) lbl.textContent = 'Counter (delay min)';
+        if (cv) {
+          cv.min = '0';
+          cv.max = '180';
+          cv.step = '1';
+          if (typeof pv === 'number' && Number.isFinite(pv)) cv.value = String(Math.round(pv));
         }
       } else {
         if (lbl) lbl.textContent = 'Counter °C';
@@ -1308,7 +1260,13 @@
         showerIntentSawActivity: false,
       },
       thermo: { setpoint: 20, device_state: 'idle', outdoorHeatingOff: false },
-      dishwasher: { state: 'idle' },
+      dishwasher: {
+        state: 'idle',
+        /** 0 idle … 5 run — washing machine pipeline diagram */
+        flowIdx: 0,
+        flowCaption: '',
+        flowDeclined: false,
+      },
       carbon: { value: null, level: '—' },
       weather: { temp: null },
       weatherChartMode: 'forecast',
@@ -1336,6 +1294,9 @@
 
     function scenarioHasShowerAgents(scenarioId) {
       return (SCENARIO_AGENTS[scenarioId] || []).includes('device_shower');
+    }
+    function scenarioHasDishwasherAgents(scenarioId) {
+      return (SCENARIO_AGENTS[scenarioId] || []).includes('device_dishwasher');
     }
 
     /** Per-scenario anchors [x,y] in viewBox coords (see buildFloorSvg). */
@@ -1807,7 +1768,7 @@
   <circle id="thermoIcon" class="thermo-circle" cx="134" cy="170" r="18.5" fill="#3a5a78"/>
   <text id="thermoText" x="134" y="173" dominant-baseline="middle" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">20</text>
   <rect id="dwRect" class="dw-rect" x="290" y="136" width="72" height="42" fill="#484f58" />
-  <text x="326" y="160" text-anchor="middle" fill="#8b949e" font-size="9">DW</text>
+  <text x="326" y="160" text-anchor="middle" fill="#8b949e" font-size="9">WM</text>
   <circle id="lightLR" class="light-dot" cx="92" cy="152" r="6" fill="#484f58"/>
   <circle id="lightK" class="light-dot" cx="336" cy="152" r="6" fill="#484f58"/>
   <path id="showerIcon" transform="translate(-11,-2)" class="shower-droplet" d="M165 45 Q165 60 175 55 Q170 40 165 45" fill="#58a6ff" opacity="0.45" style="display:none"/>
@@ -1857,7 +1818,7 @@
   <circle id="thermoIcon" class="thermo-circle" cx="126" cy="168" r="18" fill="#3a5a78"/>
   <text id="thermoText" x="126" y="171" dominant-baseline="middle" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">20</text>
   <rect id="dwRect" class="dw-rect" x="268" y="134" width="70" height="40" fill="#484f58" />
-  <text x="303" y="158" text-anchor="middle" fill="#8b949e" font-size="9">DW</text>
+  <text x="303" y="158" text-anchor="middle" fill="#8b949e" font-size="9">WM</text>
   <circle id="lightLR" class="light-dot" cx="92" cy="152" r="6" fill="#484f58"/>
   <circle id="lightK" class="light-dot" cx="310" cy="152" r="6" fill="#484f58"/>
   <path id="showerIcon" transform="translate(26,0)" class="shower-droplet" d="M165 45 Q165 60 175 55 Q170 40 165 45" fill="#58a6ff" opacity="0.45" style="display:none"/>
@@ -2105,6 +2066,7 @@
         WaterServiceNotice: '#56d4dd',
         WaterShowerIntent: '#7ee787',
         WaterPreheatIntent: '#ffa657',
+        DishwasherRunRequest: '#79d4c9',
         CostPressureUpdate: '#fb923c',
         ExternalDisruptionEvent: '#f472b6',
         GrocerySignalUpdate: '#34d399',
@@ -2131,11 +2093,51 @@
     /** True while an SSE sim run is active — blocks idle loadWeatherSeriesChart from clobbering the sim forecast chart. */
     let simStreamActive = false;
 
-    function updateInjectShowerCardVisibility() {
-      const card = document.getElementById('injectShowerCard');
+    function updateInjectActionsCardVisibility() {
+      const card = document.getElementById('injectActionsCard');
+      const hw = document.getElementById('injectHotWaterBlock');
+      const dw = document.getElementById('injectDishwasherBlock');
       if (!card) return;
       const sc = document.getElementById('scenario').value;
-      card.style.display = scenarioHasShowerAgents(sc) ? '' : 'none';
+      const hi =
+        scenarioUsesHumanInject(sc) || scenarioUsesHumanInject(state.streamScenario);
+      const hasS = scenarioHasShowerAgents(sc);
+      const hasD = scenarioHasDishwasherAgents(sc);
+      if (hw) hw.style.display = hasS && hi ? '' : 'none';
+      if (dw) dw.style.display = hasD && hi ? '' : 'none';
+      if (dw) {
+        const sub = dw.querySelector('.hi-actions-subtitle');
+        if (sub) sub.style.marginTop = hasS && hasD && hi ? '0.75rem' : '0';
+      }
+      card.style.display = (hasS || hasD) && hi ? '' : 'none';
+      syncDishwasherFlowDiagram();
+    }
+
+    /** Horizontal pipeline for washing machine: Request → Schedule → Negotiate → Wait → Run. */
+    function syncDishwasherFlowDiagram() {
+      const wrap = document.getElementById('dishwasherFlowDiagram');
+      const cap = document.getElementById('dishwasherFlowCaption');
+      if (!wrap || !cap) return;
+      const sc = state.streamScenario || state.currentScenario;
+      if (!scenarioHasDishwasherAgents(sc)) {
+        wrap.style.display = 'none';
+        return;
+      }
+      wrap.style.display = 'block';
+      const idx = Math.max(0, Math.min(5, Number(state.dishwasher.flowIdx) || 0));
+      state.dishwasher.flowIdx = idx;
+      wrap.querySelectorAll('.dw-flow-node[data-flow-i]').forEach((el) => {
+        const i = parseInt(el.getAttribute('data-flow-i'), 10);
+        const done = idx > 0 && i < idx;
+        const active = i === idx;
+        el.classList.toggle('dw-flow-done', done);
+        el.classList.toggle('dw-flow-active', active);
+        el.classList.toggle(
+          'dw-flow-warn',
+          active && i === 2 && !!state.dishwasher.flowDeclined,
+        );
+      });
+      cap.textContent = String(state.dishwasher.flowCaption || '').trim();
     }
 
     function updateHumanInjectStripVisibility() {
@@ -2145,7 +2147,7 @@
         'visible',
         scenarioUsesHumanInject(sc) || scenarioUsesHumanInject(state.streamScenario),
       );
-      updateInjectShowerCardVisibility();
+      updateInjectActionsCardVisibility();
     }
 
     function injectUiFeedback(msg, cls) {
@@ -2764,6 +2766,15 @@
       syncWeatherModePill();
     }
 
+    /** reason=… in dishwasher_schedule llm_api_call (internal id; UI copy says washing machine). */
+    function parseDishwasherScheduleReasonFromSummary(sumFull) {
+      const s = String(sumFull || '');
+      const mq = s.match(/\breason=('([^']*)'|"([^"]*)"|(\S+))/);
+      if (!mq) return '';
+      const inner = mq[2] != null ? mq[2] : mq[3] != null ? mq[3] : mq[4];
+      return String(inner || '').replace(/\\'/g, "'").replace(/\\"/g, '"').trim();
+    }
+
     function processOneEvent(kind, data) {
       bumpSimForecastTimelineFromEvent(data);
       if (kind === 'message') {
@@ -2776,9 +2787,14 @@
         }
         if (data.msg_type === 'NegotiationProposal' && data.recipient === 'person_cli' && data.negotiation_id) {
           state.lastCliProposalId = String(data.negotiation_id);
-          state.lastCliProposalDevice = data.device_id != null ? String(data.device_id) : 'device_thermostat';
-          state.lastCliProposalAttribute =
-            data.attribute != null ? String(data.attribute) : 'temperature';
+          const attr0 = data.attribute != null ? String(data.attribute) : 'temperature';
+          state.lastCliProposalDevice =
+            data.device_id != null
+              ? String(data.device_id)
+              : attr0 === 'dishwasher_delay'
+                ? 'device_dishwasher'
+                : 'device_thermostat';
+          state.lastCliProposalAttribute = attr0;
           const attr = state.lastCliProposalAttribute;
           const pv = data.proposed_value;
           if (scenarioUsesHumanInject(state.streamScenario || state.currentScenario)) {
@@ -2794,6 +2810,21 @@
                 ? 'Device proposes ' + pv.toFixed(1) + ' min'
                 : 'Device proposal — reply in card';
             setAgentCard('person_cli', 'st-negotiating', 'shower negotiation', ptxt + ' — use Thermostat negotiation card');
+          } else if (attr === 'dishwasher_delay') {
+            const ptxt =
+              typeof pv === 'number' && Number.isFinite(pv)
+                ? 'Device proposes start delay ' + pv.toFixed(0) + ' min'
+                : 'Device proposal — reply in card';
+            setAgentCard('person_cli', 'st-negotiating', 'washing machine negotiation', ptxt + ' — use Thermostat negotiation card');
+            state.dishwasher.flowIdx = Math.max(state.dishwasher.flowIdx || 0, 3);
+            if (typeof pv === 'number' && Number.isFinite(pv)) {
+              state.dishwasher.flowCaption =
+                `Start delay proposal: ${Math.round(pv)} min (sim) — reply via Thermostat negotiation card.`;
+            } else {
+              state.dishwasher.flowCaption =
+                'Delay negotiation — reply via Thermostat negotiation card.';
+            }
+            syncDishwasherFlowDiagram();
           } else {
             const ptxt =
               typeof pv === 'number' && Number.isFinite(pv)
@@ -2813,6 +2844,13 @@
                 'shower negotiation',
                 'You countered ' + cv.toFixed(1) + ' min — awaiting next round',
               );
+            } else if (attr === 'dishwasher_delay') {
+              setAgentCard(
+                'person_cli',
+                'st-negotiating',
+                'washing machine negotiation',
+                'You countered ' + cv.toFixed(0) + ' min delay — awaiting next round',
+              );
             } else {
               setAgentCard(
                 'person_cli',
@@ -2825,13 +2863,34 @@
         }
         if (data.msg_type === 'NegotiationAccept' && data.sender === 'person_cli') {
           const dev = data.device_id != null ? String(data.device_id) : '';
-          const lab = dev === 'device_shower' ? 'shower negotiation' : 'thermostat negotiation';
+          const attr = data.attribute != null ? String(data.attribute) : '';
+          let lab = 'thermostat negotiation';
+          if (dev === 'device_shower' || attr === 'shower_minutes') lab = 'shower negotiation';
+          else if (dev === 'device_dishwasher' || attr === 'dishwasher_delay') lab = 'washing machine negotiation';
           setAgentCard('person_cli', 'st-negotiating', lab, 'You accepted — awaiting outcome');
         }
         if (data.msg_type === 'NegotiationReject' && data.sender === 'person_cli') {
           const dev = data.device_id != null ? String(data.device_id) : '';
-          const lab = dev === 'device_shower' ? 'shower negotiation' : 'thermostat negotiation';
+          const attr = data.attribute != null ? String(data.attribute) : '';
+          let lab = 'thermostat negotiation';
+          if (dev === 'device_shower' || attr === 'shower_minutes') lab = 'shower negotiation';
+          else if (dev === 'device_dishwasher' || attr === 'dishwasher_delay') lab = 'washing machine negotiation';
           setAgentCard('person_cli', 'st-negotiating', lab, 'You rejected — awaiting outcome');
+        }
+        if (data.msg_type === 'DishwasherRunRequest' && data.recipient === 'device_dishwasher') {
+          const sender = String(data.sender || '?');
+          const prevIdx = Number(state.dishwasher.flowIdx) || 0;
+          state.dishwasher.flowIdx = Math.max(prevIdx, 1);
+          state.dishwasher.flowDeclined = false;
+          if (prevIdx <= 1) {
+            state.dishwasher.flowCaption =
+              `Run request (${sender}). Next: Schedule when the schedule step appears in the feed.`;
+          } else {
+            const prevCap = String(state.dishwasher.flowCaption || '').trim();
+            const extra = `Another request (${sender}) — merged into the same pending batch; stage stays at ${prevIdx >= 3 ? 'negotiate or later' : 'schedule+'}.`;
+            state.dishwasher.flowCaption = prevCap ? `${prevCap} ${extra}` : extra;
+          }
+          syncDishwasherFlowDiagram();
         }
         pushFeed(data, data.description, data.msg_type);
         pulseAgent(data.sender);
@@ -2885,6 +2944,16 @@
             state.cli.home ? (state.cli.sleeping ? 'sleeping' : 'home') : 'away',
             state.cli.pref + '°C preferred | ' + (state.cli.home ? 'home' : 'away') + z,
           );
+        }
+        if (attr === 'dishwasher_delay' && data.device_id === 'device_dishwasher') {
+          const dm = typeof data.final_value === 'number' && Number.isFinite(data.final_value)
+            ? data.final_value
+            : parseFloat(String(data.final_value));
+          state.dishwasher.flowIdx = Math.max(state.dishwasher.flowIdx || 0, 4);
+          state.dishwasher.flowCaption = Number.isFinite(dm)
+            ? `Agreed start delay: ${dm.toFixed(0)} min (sim), then physical wait / run.`
+            : 'Delay negotiation finished — moving to deferred start.';
+          syncDishwasherFlowDiagram();
         }
       }
       if (kind === 'failure') {
@@ -2977,8 +3046,31 @@
             setAgentCard(id, m[0], m[1], thermostatDetailLine());
           }
           if (id === 'device_dishwasher') {
-            state.dishwasher.state = v === 'running' ? 'running' : v === 'scheduled' ? 'scheduled' : 'idle';
+            const prevDw = state.dishwasher.state;
+            const vs = typeof v === 'string' ? v : String(v);
+            const nextDw = vs === 'running' ? 'running' : vs === 'scheduled' ? 'scheduled' : 'idle';
+            state.dishwasher.state = nextDw;
             setAgentCard(id, 'st-idle', state.dishwasher.state, '—');
+            if (nextDw === 'scheduled') {
+              state.dishwasher.flowIdx = Math.max(state.dishwasher.flowIdx || 0, 4);
+              if (!(state.dishwasher.flowCaption || '').includes('Agreed')) {
+                state.dishwasher.flowCaption =
+                  'Deferred start — waiting sim time until the cycle begins.';
+              }
+              syncDishwasherFlowDiagram();
+            } else if (nextDw === 'running') {
+              state.dishwasher.flowIdx = Math.max(state.dishwasher.flowIdx || 0, 5);
+              state.dishwasher.flowCaption = 'Cycle running (~90 sim min).';
+              syncDishwasherFlowDiagram();
+            } else if (
+              nextDw === 'idle'
+              && (prevDw === 'running' || prevDw === 'scheduled')
+            ) {
+              state.dishwasher.flowIdx = 0;
+              state.dishwasher.flowCaption = '';
+              state.dishwasher.flowDeclined = false;
+              syncDishwasherFlowDiagram();
+            }
           }
           if (id === 'device_shower') {
             const prev = state.shower.runState || 'idle';
@@ -3065,7 +3157,6 @@
       }
       if (kind === 'llm_observation') {
         addLlmObservationCard(data);
-        addImpactLogEntry(data);
         const ts = _numOrNaN(data.timestamp);
         if (Number.isFinite(ts)) {
           llmEventMarkers.push({
@@ -3102,6 +3193,27 @@
           `${data.api_id || 'api'} · ${data.success ? 'ok' : 'fail'}${short ? ' · ' + short : ''}`,
           'LLMApiCall',
         );
+        const isDwSched =
+          String(data.api_id || '') === 'dishwasher_schedule'
+          || String(data.halo_message_type || '') === 'DishwasherScheduleDecision';
+        if (isDwSched) {
+          state.dishwasher.flowIdx = Math.max(state.dishwasher.flowIdx || 0, 2);
+          const sumFull = String(data.observation_summary || '');
+          if (/approve\s*=\s*false/i.test(sumFull)) {
+            state.dishwasher.flowDeclined = true;
+            const why = parseDishwasherScheduleReasonFromSummary(sumFull);
+            state.dishwasher.flowCaption = why
+              ? `Declined for now (approve=false). Reason: ${why}. Re-evaluating on a short sim timer; if the request stays pending too long, the sim switches to a built-in deferred schedule.`
+              : 'Declined for now (approve=false). No reason= field parsed from the LLM row — open LLMApiCall / inspector for the full summary. Re-evaluating on a timer; long waits fall back to a heuristic schedule.';
+          } else {
+            state.dishwasher.flowDeclined = false;
+            const m = sumFull.match(/defer_minutes\s*=\s*([\d.]+)/i);
+            state.dishwasher.flowCaption = m
+              ? `Schedule: approved — defer ≈ ${Number(m[1]).toFixed(0)} min (sim), then optional delay negotiation.`
+              : 'Schedule: approved — defer details in LLMApiCall row.';
+          }
+          syncDishwasherFlowDiagram();
+        }
       }
       if (kind === 'llm_pipeline_error') {
         addPipelineFailureRow(data);
@@ -3141,16 +3253,17 @@
       document.getElementById('mSat').textContent = '—';
       document.getElementById('mCarb').textContent = '—';
       feedEl.innerHTML = '';
-      const reasoningFeed = document.getElementById('reasoning-feed');
-      const reasoningEmpty = document.getElementById('reasoning-empty');
-      if (reasoningFeed) reasoningFeed.innerHTML = '';
-      if (reasoningEmpty) reasoningEmpty.style.display = '';
       state.alice.sleeping = false;
       state.bob.sleeping = false;
       state.cli.sleeping = false;
       state.cli.showerIntentBathroom = false;
       state.cli.showerIntentSawActivity = false;
       state.shower = { hotWaterFrac: 1.0, runState: 'idle', userId: null, sessionActive: false };
+      state.dishwasher.state = 'idle';
+      state.dishwasher.flowIdx = 0;
+      state.dishwasher.flowCaption = '';
+      state.dishwasher.flowDeclined = false;
+      syncDishwasherFlowDiagram();
       refreshShowerCard();
       chartLine.data.labels = [];
       chartLine.data.datasets.forEach(d => d.data = []);
@@ -3159,10 +3272,6 @@
       requestAnimationFrame(() => {
         syncThermostatOverlaySize();
       });
-      const impactBody = document.getElementById('impact-log-body');
-      const impactEmpty = document.getElementById('impact-empty');
-      if (impactBody) impactBody.innerHTML = '';
-      if (impactEmpty) impactEmpty.style.display = '';
       if (chartShower) {
         chartShower.data.labels = [];
         chartShower.data.datasets.forEach(d => { d.data = []; });
@@ -3246,10 +3355,6 @@
         const ms = Date.parse(d.sim_epoch_utc);
         if (Number.isFinite(ms)) state.simEpochUtcMs = ms;
         if (state.weatherForecastSimCache && state.weatherChartMode === 'sim') updateSimForecastWeatherChart();
-        const feed = document.getElementById('reasoning-feed');
-        const empty = document.getElementById('reasoning-empty');
-        if (feed) feed.innerHTML = '';
-        if (empty) empty.style.display = '';
       });
       evtSource.addEventListener('message', e => {
         if (e.target !== evtSource) return;
@@ -3266,10 +3371,6 @@
       evtSource.addEventListener('learning', e => {
         if (e.target !== evtSource) return;
         enqueue('learning', JSON.parse(e.data));
-      });
-      evtSource.addEventListener('llm_reasoning', e => {
-        if (e.target !== evtSource) return;
-        addReasoningEntry(JSON.parse(e.data));
       });
       evtSource.addEventListener('llm_observation', e => {
         if (e.target !== evtSource) return;
@@ -3416,12 +3517,18 @@
       const rt =
         state.lastCliProposalAttribute === 'shower_minutes'
           ? ' (shower minutes → device_shower)'
-          : ' (thermostat °C)';
+          : state.lastCliProposalAttribute === 'dishwasher_delay'
+            ? ' (washing machine start delay min → device_dishwasher)'
+            : ' (thermostat °C)';
       injectUiFeedback('Filled nid + routing for last proposal to person_cli' + rt + '.', 'ok');
     });
     document.getElementById('injectSetPref').addEventListener('click', () => {
       const v = parseFloat(String(document.getElementById('injectPref').value || '21'));
       void postHumanInject({ op: 'set_pref', value: v });
+    });
+    document.getElementById('injectSetShowerPref').addEventListener('click', () => {
+      const m = parseFloat(String(document.getElementById('injectShowerPref').value || '15'));
+      void postHumanInject({ op: 'set_shower_pref', minutes: m });
     });
     document.getElementById('injectLeave').addEventListener('click', () => { void postHumanInject({ op: 'leave' }); });
     document.getElementById('injectReturn').addEventListener('click', () => { void postHumanInject({ op: 'return' }); });
@@ -3479,6 +3586,13 @@
     });
     document.getElementById('injectPreheat').addEventListener('click', () => {
       void postHumanInject({ op: 'request_preheat' });
+    });
+    document.getElementById('injectDishwasher').addEventListener('click', async () => {
+      const raw = String(document.getElementById('injectDishwasherUrgency').value || '').trim();
+      const u = parseFloat(raw === '' ? '0.55' : raw);
+      const body = { op: 'request_dishwasher' };
+      if (Number.isFinite(u)) body.urgency = Math.max(0, Math.min(1, u));
+      await postHumanInject(body);
     });
 
     initCharts();

@@ -43,6 +43,8 @@ class MessageTypes:
     WaterShowerIntent = "WaterShowerIntent"
     WaterPreheatIntent = "WaterPreheatIntent"
     WaterServiceNotice = "WaterServiceNotice"
+    # Person → dishwasher: request a cycle; device may defer via LLM + optional negotiation.
+    DishwasherRunRequest = "DishwasherRunRequest"
 
 
 @dataclass

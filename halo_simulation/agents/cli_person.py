@@ -92,11 +92,14 @@ class CliPersonAgent(PersonAgent):
 
     @property
     def state_snapshot(self) -> dict[str, Any]:
-        return {
+        snap: dict[str, Any] = {
             "preferred_temperature": float(self._state.get("preferred_temperature", 21.0)),
             "is_home": bool(self._state.get("is_home", True)),
             "comfort_weight": float(self._state.get("comfort_weight", config.DEFAULT_COMFORT_WEIGHT)),
         }
+        if "preferred_shower_minutes" in self._state:
+            snap["preferred_shower_minutes"] = float(self._state["preferred_shower_minutes"])
+        return snap
 
     def _handle_message(self, msg: Message) -> None:
         if self.manual_negotiation and msg.msg_type == MessageTypes.NegotiationProposal:
@@ -120,6 +123,15 @@ class CliPersonAgent(PersonAgent):
     def set_preferred_temperature(self, value: float) -> None:
         v = float(max(config.THERMOSTAT_MIN, min(config.THERMOSTAT_MAX, value)))
         self._state["preferred_temperature"] = v
+
+    def set_preferred_shower_minutes(self, value: float) -> None:
+        v = float(
+            max(
+                config.SHOWER_DURATION_MIN_MINUTES,
+                min(config.SHOWER_DURATION_MAX_MINUTES, value),
+            )
+        )
+        self._state["preferred_shower_minutes"] = v
 
     def simulate_sleep(self) -> None:
         """Broadcast sleep and record an evening meal for household context (CLI / inject)."""

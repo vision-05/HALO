@@ -1,8 +1,2 @@
 timestamp,device_id,failure_type,recovery_attempts,recovery_succeeded,time_in_failed_state
-602.0,device_dishwasher,random,1,True,30.0
-1024.0,device_shower,random,1,True,30.0
-1128.0,device_dishwasher,random,1,True,30.0
-1506.0,device_dishwasher,random,1,True,30.0
-1779.0,device_shower,random,1,True,30.0
-1987.0,device_shower,random,1,True,30.0
-2280.0,device_shower,random,1,True,30.0
+540.0,device_shower,random,1,True,30.0

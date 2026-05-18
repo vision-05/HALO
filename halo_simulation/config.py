@@ -10,8 +10,10 @@ DEFAULT_RUN_DAYS = 30
 # SimPy ordering: deliver bus messages slightly after env.now so minute-boundary timeouts
 # resolve before inbox.put at the same nominal timestamp.
 MESSAGE_BUS_SEND_DELAY = 0.001  # simulated minutes (~60 ms wall-clock equivalent)
-# HTTP /stream: SimPy env.run is chunked so a client disconnect can stop the worker thread.
-STREAM_STOP_CHECK_CHUNK_MINUTES = 120.0  # simulated minutes per env.run slice
+# HTTP /stream: SimPy env.run is chunked so (a) a client disconnect can stop the worker thread and
+# (b) queued SSE events are flushed to the browser frequently. Keep small (2 sim min) so the browser
+# sees events within ~2 sim-min of them happening; the sim thread yields the GIL between chunks.
+STREAM_STOP_CHECK_CHUNK_MINUTES = 2.0  # simulated minutes per env.run slice
 # Optional /stream?demo_wall_seconds=N: sleep after each chunk so the full run lasts ~N wall seconds (human demos).
 DEMO_WALL_SECONDS_MAX = 7200.0
 
@@ -101,6 +103,35 @@ CARBON_SPIKE_INTENSITY = 280  # gCO2/kWh (high band)
 
 # Dishwasher: prefer scheduling after this minute on high-carbon days
 DISHWASHER_LOW_CARBON_AFTER_MINUTE = 22 * 60
+# When True, schedule gate calls the LLM (HTTP, can block the sim thread several seconds).
+# Default False: use carbon/time heuristic only — same batch still runs once for all pending requesters.
+# Enable with env DISHWASHER_USE_LLM_SCHEDULE=true if you want JSON approve/defer from the model.
+DISHWASHER_USE_LLM_SCHEDULE = os.getenv("DISHWASHER_USE_LLM_SCHEDULE", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+# After schedule gate approves, optionally negotiate ``dishwasher_delay`` with requesters (extra rounds).
+# Default off for speed and so CLI human-in-the-loop is never stuck (CliPersonAgent does not auto-reply).
+# Set DISHWASHER_USE_DELAY_NEGOTIATION=true to enable; dishwasher rounds never use indefinite sim-wait.
+DISHWASHER_USE_DELAY_NEGOTIATION = os.getenv("DISHWASHER_USE_DELAY_NEGOTIATION", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+# Person auto-accept band when proposed delay is within this many minutes of “as soon as possible” (0).
+DISHWASHER_DELAY_NEGOTIATION_TOLERANCE_MIN = 25.0
+# Clamp LLM / heuristic / negotiation deferral (simulated minutes from approval until physical start).
+DISHWASHER_DEFER_MINUTES_MAX = 180.0
+# Heuristic high-carbon path: minutes-to-22:00 is capped so the sim does not sit hundreds of sim minutes in Wait.
+DISHWASHER_DEFER_DIRTY_GRID_CAP_MINUTES = 90.0
+# After LLM returns approve=false, re-run scheduling this often (sim minutes), in addition to carbon broadcasts.
+DISHWASHER_DECLINED_RETRY_SIM_MINUTES = 15.0
+# If the oldest pending request is at least this many sim minutes old, skip further LLM declines and use the
+# heuristic schedule (always approves with a deferral) so runs do not stall for days of simulated time.
+DISHWASHER_APPROVE_FALSE_OVERRIDE_AFTER_SIM_MIN = 90.0
 
 # Hot water tank (shower scenarios): normalized 0–1 fraction in agent state UI
 HOT_WATER_DRAIN_PER_SHOWER = 0.35

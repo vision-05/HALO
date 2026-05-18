@@ -34,10 +34,12 @@ class PersonAgent(BaseAgent):
         comfort_weight: float | None = None,
         preferred_temperature: float = 21.0,
         preferred_lighting: float = 70.0,
+        preferred_shower_minutes: float | None = None,
         scenario_name: str = "default",
         skip_commute: bool = False,
         favorite_meals: list[str] | None = None,
         meal_context: HouseholdMealContext | None = None,
+        dishwasher_run_after_return_delay_range: tuple[float, float] | None = None,
     ) -> None:
         super().__init__(agent_id, "person", env, message_bus, metrics)
         self.name = name
@@ -51,6 +53,14 @@ class PersonAgent(BaseAgent):
         self._state["is_home"] = True
         self._state["preferred_temperature"] = preferred_temperature
         self._state["preferred_lighting"] = preferred_lighting
+        if preferred_shower_minutes is not None:
+            self._state["preferred_shower_minutes"] = float(
+                np.clip(
+                    float(preferred_shower_minutes),
+                    config.SHOWER_DURATION_MIN_MINUTES,
+                    config.SHOWER_DURATION_MAX_MINUTES,
+                )
+            )
         self._scenario_name = scenario_name
 
         raw_meals = [str(x).strip() for x in (favorite_meals or []) if str(x).strip()]
@@ -65,6 +75,7 @@ class PersonAgent(BaseAgent):
         self._last_leave_minute = float(self._schedule_base["leave"])
         self._last_return_minute = float(self._schedule_base["return"])
         self._return_disruption_delta_minutes = 0.0
+        self._dishwasher_after_return_delay_range = dishwasher_run_after_return_delay_range
 
     def set_favorite_meals(self, meals: list[str]) -> None:
         self._favorite_meals = [str(x).strip() for x in meals if str(x).strip()][:5]
@@ -154,6 +165,9 @@ class PersonAgent(BaseAgent):
             )
             self.broadcast(m)
             self._broadcast_preferences()
+            if self._dishwasher_after_return_delay_range is not None:
+                lo, hi = self._dishwasher_after_return_delay_range
+                self.env.process(self._delayed_dishwasher_request(float(lo), float(hi)))
         elif kind == "sleep":
             m = Message.create(
                 self.agent_id,
@@ -165,6 +179,19 @@ class PersonAgent(BaseAgent):
             self.broadcast(m)
             self._record_evening_meal_if_applicable()
 
+    def _delayed_dishwasher_request(self, lo: float, hi: float) -> Any:
+        a, b = (lo, hi) if lo <= hi else (hi, lo)
+        delay = float(self._rng.uniform(a, b))
+        yield self.env.timeout(max(0.0, delay))
+        m = Message.create(
+            self.agent_id,
+            "device_dishwasher",
+            MessageTypes.DishwasherRunRequest,
+            {"requester_id": self.agent_id, "urgency": 0.55},
+            self.env.now,
+        )
+        self.send("device_dishwasher", m)
+
     def _record_evening_meal_if_applicable(self) -> None:
         if self._meal_context is None or len(self._favorite_meals) < 1:
             return
@@ -172,12 +199,15 @@ class PersonAgent(BaseAgent):
         self._meal_context.record_dinner(self.agent_id, self.env.now, meal)
 
     def _broadcast_preferences(self) -> None:
+        prefs: dict[str, Any] = {
+            "temperature": self._state["preferred_temperature"],
+            "lighting": self._state["preferred_lighting"],
+        }
+        if "preferred_shower_minutes" in self._state:
+            prefs["shower_minutes"] = float(self._state["preferred_shower_minutes"])
         payload = {
             "person_id": self.agent_id,
-            "preferences": {
-                "temperature": self._state["preferred_temperature"],
-                "lighting": self._state["preferred_lighting"],
-            },
+            "preferences": prefs,
             "comfort_weight": self._state["comfort_weight"],
             "is_home": self._state["is_home"],
         }
@@ -197,7 +227,8 @@ class PersonAgent(BaseAgent):
             self._respond_negotiation(msg)
         elif msg.msg_type == MessageTypes.NegotiationResolved:
             pl = msg.payload
-            if pl.get("attribute", "temperature") == "temperature":
+            attr = str(pl.get("attribute", "temperature") or "temperature")
+            if attr == "temperature":
                 self.record_resolved_temperature(float(pl.get("final_value", self._last_declared_temp)))
         elif msg.msg_type == MessageTypes.ActuationCommand:
             pass
@@ -288,6 +319,41 @@ class PersonAgent(BaseAgent):
             self.send(recipient, out)
             return
 
+        if attr == "dishwasher_delay":
+            pref = 0.0
+            tol = float(config.DISHWASHER_DELAY_NEGOTIATION_TOLERANCE_MIN)
+            hi = float(config.DISHWASHER_DEFER_MINUTES_MAX)
+            proposed_clamped = max(0.0, min(hi, proposed))
+            if abs(proposed_clamped - pref) <= tol:
+                out = Message.create(
+                    self.agent_id,
+                    recipient,
+                    MessageTypes.NegotiationAccept,
+                    {
+                        "negotiation_id": nid,
+                        "device_id": device_id,
+                        "attribute": "dishwasher_delay",
+                    },
+                    self.env.now,
+                )
+            else:
+                counter_val = (proposed_clamped + pref) / 2.0
+                counter_val = max(0.0, min(hi, counter_val))
+                out = Message.create(
+                    self.agent_id,
+                    recipient,
+                    MessageTypes.NegotiationCounter,
+                    {
+                        "negotiation_id": nid,
+                        "counter_value": counter_val,
+                        "device_id": device_id,
+                        "attribute": attr,
+                    },
+                    self.env.now,
+                )
+            self.send(recipient, out)
+            return
+
         if attr == "shower_minutes":
             pref = float(protocol.shower_minutes_from_comfort_temp(float(self._state.get("preferred_temperature", 21.0))))
             tol = float(config.SHOWER_MINUTES_TOLERANCE)
@@ -327,6 +393,7 @@ class PersonAgent(BaseAgent):
                     self.env.now,
                 )
             self.send(recipient, out)
+            return
 
     def _end_of_day_learning(self, day_start: float) -> None:
         day_index = int(day_start // config.MINUTES_PER_DAY)

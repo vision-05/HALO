@@ -76,7 +76,7 @@ PYTHONPATH=. python -m halo_simulation.cli_human --scenario fused --days 2 --dem
 
 ## LLM specialist (short)
 
-`LLMSpecialistAgent` wakes on a SimPy clock, calls `LLMClient.reason` for a structured “should I call an external API?” decision, may `httpx.get` registered endpoints (Open-Meteo, Open Food Facts, gov.uk fuel page HTML, NewsAPI if `NEWSAPI_KEY` is set), then asks `complete_json` to turn responses into HALO broadcast messages. Protocol details and header styles live in `llm_client.py` / `config.py`. SSE exposes reasoning, API calls, and pipeline errors separately so the UI can show failures without breaking the stream.
+`LLMSpecialistAgent` wakes on a SimPy clock, calls `LLMClient.reason` for a structured “should I call an external API?” decision, may `httpx.get` registered endpoints (Open-Meteo, Open Food Facts, gov.uk fuel page HTML, NewsAPI if `NEWSAPI_KEY` or `NEWS_API` is set), then asks `complete_json` to turn responses into HALO broadcast messages. Protocol details and header styles live in `llm_client.py` / `config.py`. SSE exposes reasoning, API calls, and pipeline errors separately so the UI can show failures without breaking the stream.
 
 ---
 

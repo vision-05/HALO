@@ -49,10 +49,12 @@ HALO human bridge — type commands (one per line):
   return                      — home + ArrivalNotice + preferences
   send-counter <deg|min> <nid> [device_id] [attribute]
                               — NegotiationCounter (nid from `status` or feed); defaults
-                                thermostat/temperature; shower: device_shower shower_minutes
+                                thermostat/temperature; shower: device_shower shower_minutes;
+                                washing machine: device_dishwasher dishwasher_delay
   send-accept <nid> [device_id] [attribute]
-  send-reject <nid> [device_thermostat|device_shower] [reason]
+  send-reject <nid> [device_thermostat|device_shower|device_dishwasher] [reason]
   shower                       — ask ``device_shower`` to run a cycle as person_cli
+  dishwasher [urgency]        — request washing machine run on ``device_dishwasher`` (urgency 0..1, default 0.65)
   preheat                      — tank ramp when carbon allows (see fused shower agent)
   status                      — snapshot (includes pending negotiation id)
   quit                        — stop simulation thread

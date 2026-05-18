@@ -54,6 +54,27 @@ def _reset_llm_inspector_timeline() -> None:
         _llm_inspector_timeline.clear()
 
 
+def _impact_log_from_timeline(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rows for the real-world impact table (LLM-interpreted bus messages); newest first."""
+    rows: list[dict[str, Any]] = []
+    for ev in timeline:
+        if ev.get("kind") != "llm_observation":
+            continue
+        rows.append(
+            {
+                "timestamp": ev.get("timestamp"),
+                "sim_time_str": ev.get("sim_time_str"),
+                "api_id": ev.get("api_id"),
+                "msg_type": ev.get("msg_type"),
+                "summary": ev.get("summary"),
+                "severity": ev.get("severity"),
+                "sim_effect": ev.get("sim_effect"),
+            }
+        )
+    rows.reverse()
+    return rows
+
+
 def llm_effects_reference() -> dict[str, str]:
     """Static map: HALO message types emitted after LLM interpretation → who reacts in this codebase."""
     return {
@@ -77,6 +98,10 @@ def llm_effects_reference() -> dict[str, str]:
         ),
         "LLMObservationUpdate": (
             "Generic advisory broadcast for dashboards; no built-in subscriber beyond the UI stream."
+        ),
+        "DishwasherScheduleDecision": (
+            "Washing machine (device_dishwasher): internal schedule gate after LLM JSON or heuristic fallback; "
+            "see llm_api_call observation_summary (approve, defer_minutes, reason). No extra bus message."
         ),
     }
 
@@ -301,7 +326,7 @@ def _sim_effect_for_halo_payload(msg_type: str, pl: dict[str, Any]) -> str:
     if mt == MessageTypes.GrocerySignalUpdate:
         return (
             "LLMSpecialistAgent may emit virtual_shopping ActuationCommand; PersonAgent ignores "
-            "ActuationCommand (pass). Thermostat/shower/dishwasher: no code path for GrocerySignalUpdate."
+            "ActuationCommand (pass). Thermostat/shower/washing machine (device_dishwasher): no code path for GrocerySignalUpdate."
         )
     if mt == MessageTypes.LLMObservationUpdate:
         return "Simulation: unchanged (no agent handler for LLMObservationUpdate in agents/)."
@@ -318,11 +343,24 @@ def _compute_sim_effect_line(entry: dict[str, Any]) -> str:
     if kind == "llm_reasoning":
         if not entry.get("relevant"):
             return "Decision: relevant=false → no API queued. Simulation: unchanged."
-        aid = str(entry.get("api_id") or "").strip().lower()
-        if aid in ("", "none"):
-            return "Decision: relevant but api_id empty/none. Simulation: unchanged."
+        ids = entry.get("api_ids")
+        api_list: list[str] = []
+        if isinstance(ids, list):
+            for x in ids:
+                s = str(x).strip()
+                if s and s.lower() not in ("", "none"):
+                    api_list.append(s)
+        if not api_list:
+            aid = str(entry.get("api_id") or "").strip().lower()
+            if aid in ("", "none"):
+                return "Decision: relevant but api_id empty/none. Simulation: unchanged."
+            api_list = [str(entry.get("api_id")).strip()]
+        if len(api_list) == 1:
+            q = f"API {api_list[0]!r}"
+        else:
+            q = f"APIs (in order) {', '.join(repr(a) for a in api_list)}"
         return (
-            f"Decision: queue API {entry.get('api_id')!r}. "
+            f"Decision: queue {q}. "
             "Simulation: unchanged until fetch + interpret emit a bus message (see following rows)."
         )
     if kind == "llm_api_call":
@@ -346,6 +384,8 @@ def _compute_sim_effect_line(entry: dict[str, Any]) -> str:
             return _sim_effect_for_halo_payload(hmt, {"summary": summ, "severity": sev})
         if hmt == MessageTypes.LLMObservationUpdate:
             return _sim_effect_for_halo_payload(hmt, {"summary": summ, "severity": sev})
+        if hmt == "DishwasherScheduleDecision":
+            return f"Washing machine (device_dishwasher): applied schedule gate — {summ}"
         return f"Emitted {hmt!r}; no specialized sim_effect text for this type."
     if kind == "llm_observation":
         mt = str(entry.get("msg_type") or "")
@@ -376,9 +416,13 @@ def _describe_message(msg: Message) -> str:
     if mt == MessageTypes.NegotiationProposal:
         nid = pl.get("negotiation_id", "")
         nid_s = f" · nid {nid}" if nid else ""
-        return f"Propose {pl.get('proposed_value', '?')} ({pl.get('attribute', '')}){nid_s}"
+        attr = str(pl.get("attribute", "") or "")
+        attr_d = "washing machine delay" if attr == "dishwasher_delay" else attr
+        return f"Propose {pl.get('proposed_value', '?')} ({attr_d}){nid_s}"
     if mt == MessageTypes.NegotiationCounter:
-        return f"Counter {pl.get('counter_value', '?')} ({pl.get('attribute', 'temperature')})"
+        attr = str(pl.get("attribute", "temperature") or "temperature")
+        attr_d = "washing machine delay" if attr == "dishwasher_delay" else attr
+        return f"Counter {pl.get('counter_value', '?')} ({attr_d})"
     if mt == MessageTypes.NegotiationAccept:
         return "Accept negotiation"
     if mt == MessageTypes.NegotiationReject:
@@ -388,6 +432,8 @@ def _describe_message(msg: Message) -> str:
         fv = pl.get("final_value", "?")
         if attr == "shower_minutes":
             return f"Resolved shower duration {fv} min"
+        if attr == "dishwasher_delay":
+            return f"Resolved washing machine start delay {fv} min"
         return f"Resolved setpoint {fv}°C"
     if mt == MessageTypes.NegotiationFailed:
         return "Negotiation failed — fallback"
@@ -425,6 +471,10 @@ def _describe_message(msg: Message) -> str:
         return str(pl.get("detail") or "Water")
     if mt in (MessageTypes.WaterShowerIntent, MessageTypes.WaterPreheatIntent):
         return "Shower request" if mt == MessageTypes.WaterShowerIntent else "Preheat request"
+    if mt == MessageTypes.DishwasherRunRequest:
+        rid = pl.get("requester_id", "?")
+        u = pl.get("urgency", "")
+        return f"Washing machine run request ({rid}, urgency={u})"
     if mt in (MessageTypes.DepartureNotice, MessageTypes.ArrivalNotice, MessageTypes.SleepNotice):
         return mt.replace("Notice", "").lower()
     return str(mt)
@@ -525,6 +575,9 @@ def llm_reasoning_to_dict(event: LLMReasoningEvent, pending_calls: list[str]) ->
     sim_time_str = sim_minutes_to_clock_str(float(ts))
     snap = [dict(x) for x in (event.context_snapshot or [])]
     pc = list(pending_calls)
+    api_ids = list(event.api_ids or [])
+    if not api_ids and str(event.api_id or "").strip().lower() not in ("", "none"):
+        api_ids = [str(event.api_id).strip()]
     return {
         "sim_time": ts,
         "sim_time_str": sim_time_str,
@@ -532,11 +585,66 @@ def llm_reasoning_to_dict(event: LLMReasoningEvent, pending_calls: list[str]) ->
         "context_snapshot": snap,
         "relevant": event.relevant,
         "api_id": event.api_id,
+        "api_ids": api_ids,
         "reason": event.reason,
         "pending_calls": pc,
         "pending_effect_hints": _pending_api_effect_hints(pc),
         "llm_latency_ms": event.llm_latency_ms,
     }
+
+
+def _llm_inspector_registry_api_ids() -> list[str]:
+    from halo_simulation.external.api_registry import ApiRegistry
+
+    return [a.api_id for a in ApiRegistry().all() if a.enabled]
+
+
+def _timeline_row_api_targets(ev: dict[str, Any]) -> list[str]:
+    kind = str(ev.get("kind") or "")
+    if kind == "llm_reasoning":
+        ids = ev.get("api_ids")
+        if isinstance(ids, list) and ids:
+            out: list[str] = []
+            for x in ids:
+                s = str(x).strip()
+                if s and s.lower() not in ("none", ""):
+                    out.append(s)
+            return out
+        one = ev.get("api_id")
+        if one and str(one).strip().lower() not in ("none", ""):
+            return [str(one).strip()]
+        return []
+    if kind in ("llm_api_call", "llm_pipeline_error"):
+        one = ev.get("api_id")
+        return [str(one).strip()] if one and str(one).strip() else []
+    if kind == "llm_observation":
+        pl = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+        one = ev.get("api_id") or pl.get("api_id")
+        return [str(one).strip()] if one and str(one).strip() else []
+    return []
+
+
+def _timeline_grouped_by_api(
+    timeline: list[dict[str, Any]],
+) -> tuple[list[str], dict[str, list[dict[str, Any]]]]:
+    """Split timeline rows into per-registry-api columns (newest-first within each)."""
+    columns = _llm_inspector_registry_api_ids()
+    grouped: dict[str, list[dict[str, Any]]] = {c: [] for c in columns}
+    grouped["_other"] = []
+    col_set = set(columns)
+    for ev in timeline:
+        targets = _timeline_row_api_targets(ev)
+        if not targets:
+            grouped["_other"].append(ev)
+            continue
+        for aid in targets:
+            key = aid if aid in col_set else "_other"
+            grouped[key].append(ev)
+    ordered: dict[str, list[dict[str, Any]]] = {}
+    for c in columns:
+        ordered[c] = list(reversed(grouped.get(c, [])))
+    ordered["_other"] = list(reversed(grouped.get("_other", [])))
+    return columns, ordered
 
 
 def llm_observation_from_message(msg: Message) -> dict[str, Any]:
@@ -1139,6 +1247,12 @@ def run_simulation_thread(
                     delay = demo_wall_seconds * (advanced / until)
                     if delay > 0:
                         time.sleep(delay)
+                    else:
+                        # Even at Pace 0, yield GIL so asyncio loop can flush SSE events to the browser.
+                        time.sleep(0.001)
+                else:
+                    # No demo pacing — still yield the GIL briefly so queued SSE events reach the client.
+                    time.sleep(0.001)
 
             if stopped_early:
                 emit(
@@ -1181,13 +1295,19 @@ async def index() -> FileResponse:
 
 @app.get("/api/llm-inspector")
 async def api_llm_inspector() -> JSONResponse:
-    """JSON snapshot of recent LLM reasoning, API calls, observations, and pipeline errors (same process as /stream)."""
+    """JSON snapshot of recent LLM reasoning, API calls, observations, pipeline errors, and impact log (same process as /stream)."""
     with _llm_inspector_lock:
         timeline = list(_llm_inspector_timeline)
+    impact_log = _impact_log_from_timeline(timeline)
+    column_ids, by_api = _timeline_grouped_by_api(timeline)
     return JSONResponse(
         {
             "timeline": timeline,
             "timeline_count": len(timeline),
+            "by_api": by_api,
+            "by_api_column_ids": column_ids,
+            "impact_log": impact_log,
+            "impact_log_count": len(impact_log),
             "effects_reference": llm_effects_reference(),
             "note": "Buffer is cleared when a new /stream starts. Open this page or poll this URL while a stream is running.",
         }

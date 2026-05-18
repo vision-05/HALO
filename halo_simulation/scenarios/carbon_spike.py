@@ -1,4 +1,4 @@
-"""High evening carbon — dishwasher defers; thermostat responds via protocol weights."""
+"""Evening carbon spike — washing machine (device_dishwasher) defers via LLM/heuristic + optional delay negotiation; thermostat uses protocol weights."""
 
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ class CarbonSpikeScenario(BaseScenario):
             },
             preferred_temperature=20.0,
             scenario_name="carbon_spike",
+            dishwasher_run_after_return_delay_range=(35.0, 95.0),
         )
         bob = PersonAgent(
             "person_bob",
@@ -48,6 +49,7 @@ class CarbonSpikeScenario(BaseScenario):
             },
             preferred_temperature=20.5,
             scenario_name="carbon_spike",
+            dishwasher_run_after_return_delay_range=(40.0, 110.0),
         )
         thermo = ThermostatDeviceAgent(
             "device_thermostat",
@@ -64,6 +66,7 @@ class CarbonSpikeScenario(BaseScenario):
             self.rng,
             self.metrics,
             scenario_name="carbon_spike",
+            failure_probability=0.0,
         )
         carbon = GridCarbonAgent(
             "specialist_carbon",

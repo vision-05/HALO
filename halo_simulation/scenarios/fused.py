@@ -1,4 +1,4 @@
-"""Fused demonstration: scripted Alice + Bob, human CliPersonAgent, thermostat, dishwasher,
+"""Fused demonstration: scripted Alice + Bob, human CliPersonAgent, thermostat, washing machine (device_dishwasher),
 shower, specialists; evening carbon spike; lower random thermostat failure."""
 
 from __future__ import annotations
@@ -67,6 +67,8 @@ class FusedScenario(BaseScenario):
             scenario_name="fused",
             favorite_meals=["roast chicken", "vegetable curry", "fish tacos", "risotto"],
             meal_context=mc,
+            dishwasher_run_after_return_delay_range=(45.0, 100.0),
+            preferred_shower_minutes=25.0,
         )
         bob = PersonAgent(
             "person_bob",
@@ -85,6 +87,8 @@ class FusedScenario(BaseScenario):
             scenario_name="fused",
             favorite_meals=["pasta bake", "burger night", "dal with rice", "fish tacos"],
             meal_context=mc,
+            dishwasher_run_after_return_delay_range=(50.0, 120.0),
+            preferred_shower_minutes=18.0,
         )
         cli = CliPersonAgent(
             CLI_PERSON_ID,
@@ -124,6 +128,7 @@ class FusedScenario(BaseScenario):
             self.rng,
             self.metrics,
             scenario_name="fused",
+            failure_probability=0.0,
         )
         shower = ShowerDeviceAgent(
             "device_shower",

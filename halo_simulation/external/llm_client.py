@@ -253,7 +253,7 @@ class LLMClient:
                 self._post_url,
                 headers=config.llm_request_headers(self._api_key, protocol=self._protocol),
                 json=payload,
-                timeout=8.0,
+                timeout=15.0,
             )
             response.raise_for_status()
             raw_text = _extract_text_from_llm_response(response.json(), self._protocol)

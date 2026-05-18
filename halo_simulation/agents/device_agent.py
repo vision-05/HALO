@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from collections.abc import Generator
 from typing import Any
@@ -12,7 +13,13 @@ import simpy
 
 from halo_simulation import config
 from halo_simulation.agents.base_agent import BaseAgent
-from halo_simulation.metrics.collector import FailureEvent, MetricsCollector, NegotiationEvent
+from halo_simulation.external.llm_client import LLMClient
+from halo_simulation.metrics.collector import (
+    FailureEvent,
+    LLMApiCallEvent,
+    MetricsCollector,
+    NegotiationEvent,
+)
 from halo_simulation.negotiation import protocol
 from halo_simulation.negotiation.message import Message, MessageTypes
 
@@ -244,21 +251,6 @@ class ThermostatDeviceAgent(DeviceAgent):
             boost = self._cost_pressure_boost
         return min(float(self.device_weight) + boost, 0.9)
 
-    def _thermostat_indefinite_wait_for_round(self, participants: list[str]) -> bool:
-        """Wait without sim deadline only while every HITL id in this round is still at home."""
-        ids = set(config.NEGOTIATION_INDEFINITE_WAIT_AGENT_IDS)
-        if not any(pid in ids for pid in participants):
-            return False
-        for pid in participants:
-            if pid not in ids:
-                continue
-            info = self._preferences.get(pid)
-            if info is None:
-                return False
-            if not bool(info.get("is_home", True)):
-                return False
-        return True
-
     def _maybe_fast_reweight_setpoint(self) -> None:
         """Apply one weighted proposal from current prefs (presence/weights) without negotiation rounds."""
         if self._state.get("device_state") in ("failed", "maintenance_required"):
@@ -479,11 +471,13 @@ class ThermostatDeviceAgent(DeviceAgent):
                     )
                     self.send(pid, m)
 
+                # Finite wait only: if person_cli is in the round with manual_negotiation, indefinite
+                # wait would block the thermostat forever while Alice/Bob have already replied.
                 responses, counters = yield from self._yield_collect_negotiation_round_responses(
                     nid,
                     proposal,
                     participants,
-                    indefinite_wait=self._thermostat_indefinite_wait_for_round(participants),
+                    indefinite_wait=False,
                 )
 
                 for pid in participants:
@@ -642,57 +636,470 @@ class DishwasherDeviceAgent(DeviceAgent):
         rng: np.random.Generator,
         metrics: MetricsCollector | None,
         scenario_name: str = "default",
+        failure_probability: float | None = None,
     ) -> None:
-        super().__init__(agent_id, "dishwasher", env, message_bus, rng, metrics, scenario_name=scenario_name)
+        super().__init__(
+            agent_id,
+            "dishwasher",
+            env,
+            message_bus,
+            rng,
+            metrics,
+            failure_probability=failure_probability,
+            scenario_name=scenario_name,
+        )
         self._state["device_state"] = "idle"
         self._last_carbon = float(config.CARBON_HOURLY_BASELINE[18])
-        self._scheduled_start: float | None = None
+        self._last_carbon_forecast: list[float] = []
         self._energy_kwh = 0.0
-        self._scheduled_day = -1
+        self._pending: dict[str, dict[str, float]] = {}
+        self._person_snapshot: dict[str, dict[str, Any]] = {}
+        self._negotiation_in_progress = False
+        self._eval_busy = False
+        self._llm_client = LLMClient(api_key=config.anthropic_api_key())
+        self._declined_retry_seq = 0
 
     def _go(self, new: str) -> None:
         cur = self._state["device_state"]
         if new not in self.VALID.get(cur, set()):
             raise ValueError(f"dishwasher invalid {cur} -> {new}")
         self._state["device_state"] = new
+        # Stream/UI: dishwasher FSM does not otherwise hit the message bus. DeviceTelemetry is special-cased
+        # in MessageBus.broadcast (no inbox fan-out) but StreamingMessageBus still emits agent_state rows.
+        if new != "complete":
+            self.broadcast(
+                Message.create(
+                    self.agent_id,
+                    "broadcast",
+                    MessageTypes.DeviceTelemetry,
+                    {
+                        "device_id": self.agent_id,
+                        "device_activity": new,
+                        "notify_feed": False,
+                    },
+                    self.env.now,
+                )
+            )
+
+    def _maybe_sample_failure(self) -> None:
+        """Main ``run()`` interleaves with nested ``_try_evaluate_pending`` / defer / run processes.
+        Random failure must not fire while ``_eval_busy`` or the post-defer guard aborts before
+        ``scheduled``/``running`` (UI stuck on Wait with no Run).
+        """
+        if self._eval_busy:
+            return
+        super()._maybe_sample_failure()
+
+    def _dishwasher_device_weight(self) -> float:
+        return float(self.device_weight)
+
+    def _person_weight(self, pid: str) -> float:
+        meta = self._person_snapshot.get(pid)
+        if not meta:
+            return protocol.effective_person_weight(float(config.DEFAULT_COMFORT_WEIGHT), True)
+        return protocol.effective_person_weight(
+            float(meta.get("comfort_weight", config.DEFAULT_COMFORT_WEIGHT)),
+            bool(meta.get("is_home", True)),
+        )
 
     def _handle_message(self, msg: Message) -> None:
         if msg.msg_type == MessageTypes.CarbonIntensityUpdate:
-            self._last_carbon = float(msg.payload.get("current", self._last_carbon))
+            pl = msg.payload or {}
+            self._last_carbon = float(pl.get("current", self._last_carbon))
+            fc = pl.get("forecast_4h")
+            if isinstance(fc, list):
+                self._last_carbon_forecast = [float(x) for x in fc[:8] if x is not None]
+            if (
+                self._state["device_state"] == "idle"
+                and self._pending
+                and not self._negotiation_in_progress
+            ):
+                self.env.process(self._evaluate_pending_pipeline())
         elif msg.msg_type == MessageTypes.PreferenceDeclaration:
-            if self._state["device_state"] == "idle":
-                self.env.process(self._schedule_run())
+            pl = msg.payload or {}
+            pid = str(pl.get("person_id", msg.sender_id))
+            self._person_snapshot[pid] = {
+                "comfort_weight": float(pl.get("comfort_weight", config.DEFAULT_COMFORT_WEIGHT)),
+                "is_home": bool(pl.get("is_home", True)),
+            }
+        elif msg.msg_type == MessageTypes.DishwasherRunRequest:
+            pl = msg.payload or {}
+            rid = str(pl.get("requester_id", msg.sender_id))
+            raw_u = pl.get("urgency", 0.5)
+            try:
+                u = float(raw_u)
+            except (TypeError, ValueError):
+                u = 0.5
+            self._pending[rid] = {"urgency": max(0.0, min(1.0, u)), "at": float(self.env.now)}
+            if self._state["device_state"] == "idle" and not self._negotiation_in_progress:
+                self.env.process(self._evaluate_pending_pipeline())
 
-    def _schedule_run(self):
-        now = self.env.now
-        day = int(now // config.MINUTES_PER_DAY)
-        if self._scheduled_day == day:
+    def _evaluate_pending_pipeline(self) -> Generator[Any, Any, None]:
+        yield from self._try_evaluate_pending()
+
+    def _pending_oldest_age_minutes(self) -> float:
+        if not self._pending:
+            return 0.0
+        oldest = min(float(v["at"]) for v in self._pending.values())
+        return max(0.0, float(self.env.now) - oldest)
+
+    def _schedule_declined_retry(self) -> None:
+        self._declined_retry_seq += 1
+        seq = self._declined_retry_seq
+        self.env.process(self._declined_retry_after_timeout(seq))
+
+    def _declined_retry_after_timeout(self, seq: int) -> Generator[Any, Any, None]:
+        delay = max(1.0, float(getattr(config, "DISHWASHER_DECLINED_RETRY_SIM_MINUTES", 15.0)))
+        yield self.env.timeout(delay)
+        if seq != self._declined_retry_seq:
             return
-        self._scheduled_day = day
-        minute_of_day = now % config.MINUTES_PER_DAY
-        high_carbon = (
-            config.CARBON_SPIKE_START_MINUTE <= minute_of_day <= config.CARBON_SPIKE_END_MINUTE
-        ) or self._last_carbon > config.CARBON_HIGH_THRESHOLD
+        if self._state.get("device_state") != "idle":
+            return
+        if not self._pending:
+            return
+        if self._negotiation_in_progress:
+            return
+        self.env.process(self._evaluate_pending_pipeline())
 
-        if high_carbon and self.carbon_sensitivity > 0.3:
-            start = ((now // config.MINUTES_PER_DAY) * config.MINUTES_PER_DAY) + config.DISHWASHER_LOW_CARBON_AFTER_MINUTE
-            if start <= now:
-                start += config.MINUTES_PER_DAY
-        else:
-            start = now + self._rng.integers(30, 90)
+    def _try_evaluate_pending(self) -> Generator[Any, Any, None]:
+        if self._eval_busy:
+            return
+        self._eval_busy = True
+        try:
+            if self._state.get("device_state") != "idle":
+                return
+            if self._negotiation_in_progress:
+                return
+            if not self._pending:
+                return
+            age_min = self._pending_oldest_age_minutes()
+            override_after = float(getattr(config, "DISHWASHER_APPROVE_FALSE_OVERRIDE_AFTER_SIM_MIN", 90.0))
+            if age_min >= override_after:
+                t0 = time.perf_counter()
+                decision = self._heuristic_decision()
+                latency_ms = (time.perf_counter() - t0) * 1000.0
+                self._emit_dishwasher_schedule_decision(
+                    decision,
+                    source="heuristic_pending_age",
+                    latency_ms=latency_ms,
+                )
+                logger.info(
+                    "Washing machine %s: pending %.0f sim min — using heuristic schedule (bypass LLM decline streak)",
+                    self.agent_id,
+                    age_min,
+                )
+            elif config.DISHWASHER_USE_LLM_SCHEDULE:
+                decision = self._llm_or_heuristic_decision()
+            else:
+                t0 = time.perf_counter()
+                decision = self._heuristic_decision()
+                latency_ms = (time.perf_counter() - t0) * 1000.0
+                self._emit_dishwasher_schedule_decision(
+                    decision,
+                    source="heuristic_no_llm",
+                    latency_ms=latency_ms,
+                )
+                logger.info(
+                    "Washing machine %s: schedule gate heuristic (LLM off) pending=%s",
+                    self.agent_id,
+                    sorted(self._pending.keys()),
+                )
+            defer = float(decision.get("defer_minutes", 0.0))
+            defer = max(0.0, min(float(config.DISHWASHER_DEFER_MINUTES_MAX), defer))
+            if not bool(decision.get("approve", False)):
+                reason = decision.get("reason", "")
+                logger.info(
+                    "Washing machine %s: schedule declined (approve=false) — reason=%r pending_age_sim_min=%.1f",
+                    self.agent_id,
+                    reason,
+                    age_min,
+                )
+                self._schedule_declined_retry()
+                return
+            participants_snapshot = list(self._pending.keys())
+            if not participants_snapshot:
+                return
+            if config.DISHWASHER_USE_DELAY_NEGOTIATION:
+                self._negotiation_in_progress = True
+                try:
+                    yield from self._negotiation_delay_run(participants_snapshot, defer)
+                finally:
+                    self._negotiation_in_progress = False
+            else:
+                yield from self._physical_run_after_defer(defer, participants_snapshot)
+        finally:
+            self._eval_busy = False
 
-        self._scheduled_start = start
+    def _physical_run_after_defer(
+        self, defer_minutes: float, served_ids: list[str]
+    ) -> Generator[Any, Any, None]:
+        if defer_minutes > 0:
+            yield self.env.timeout(defer_minutes)
+        if self._state["device_state"] != "idle":
+            return
         self._go("scheduled")
-        yield self.env.timeout(max(0.0, start - now))
+        yield self.env.timeout(0.0)
         if self._state["device_state"] != "scheduled":
             return
         self._go("running")
         dur = 90.0
         self._energy_kwh += self.energy_cost_per_hour * (dur / 60.0)
         yield self.env.timeout(dur)
-        self._go("complete")
-        yield self.env.timeout(5)
-        self._go("idle")
+        if self._state["device_state"] == "running":
+            self._go("complete")
+            yield self.env.timeout(5.0)
+            self._go("idle")
+
+        if self._state["device_state"] == "idle":
+            for pid in served_ids:
+                self._pending.pop(pid, None)
+            if self._pending and not self._negotiation_in_progress:
+                self.env.process(self._evaluate_pending_pipeline())
+
+    def _negotiation_delay_run(
+        self, participants_snapshot: list[str], device_delay: float
+    ) -> Generator[Any, Any, None]:
+        participants = list(participants_snapshot)
+        original_values = [0.0] * len(participants)
+        iteration = 0
+        converged_flag = False
+        fallback_used = False
+        final_value = float(device_delay)
+        nid = str(uuid.uuid4())
+        current_values = list(original_values)
+        weights = [self._person_weight(p) for p in participants]
+
+        while iteration < config.MAX_ITERATIONS:
+            iteration += 1
+            proposal = protocol.combined_proposal(
+                current_values,
+                weights,
+                float(device_delay),
+                self._dishwasher_device_weight(),
+                self._last_carbon,
+                clip_lo=0.0,
+                clip_hi=float(config.DISHWASHER_DEFER_MINUTES_MAX),
+            )
+            proposal = max(0.0, min(float(config.DISHWASHER_DEFER_MINUTES_MAX), float(proposal)))
+            for pid in participants:
+                m = Message.create(
+                    self.agent_id,
+                    pid,
+                    MessageTypes.NegotiationProposal,
+                    {
+                        "negotiation_id": nid,
+                        "round": iteration,
+                        "proposed_value": proposal,
+                        "device_id": self.agent_id,
+                        "attribute": "dishwasher_delay",
+                    },
+                    self.env.now,
+                )
+                self.send(pid, m)
+
+            # Never block on indefinite inbox wait: person_cli uses manual_negotiation (no auto-reply),
+            # which previously stalled the whole sim. Use finite NEGOTIATION_TIMEOUT; missing → timeout → accept.
+            responses, counters = yield from self._yield_collect_negotiation_round_responses(
+                nid,
+                proposal,
+                participants,
+                indefinite_wait=False,
+            )
+
+            for pid in participants:
+                if pid not in responses:
+                    responses[pid] = "timeout"
+
+            new_values: list[float] = []
+            for i, pid in enumerate(participants):
+                r = responses[pid]
+                if r == "counter" and pid in counters:
+                    new_values.append(counters[pid])
+                elif r in ("accept", "timeout"):
+                    new_values.append(proposal)
+                else:
+                    new_values.append(current_values[i])
+
+            if protocol.converged(new_values):
+                converged_flag = True
+                final_value = proposal
+                break
+            current_values = new_values
+
+        if not converged_flag:
+            fallback_used = config.FALLBACK_TO_UNWEIGHTED_AVERAGE
+            if fallback_used:
+                final_value = float(
+                    np.clip(
+                        protocol.unweighted_average(original_values),
+                        0.0,
+                        float(config.DISHWASHER_DEFER_MINUTES_MAX),
+                    )
+                )
+            else:
+                final_value = protocol.combined_proposal(
+                    current_values,
+                    weights,
+                    float(device_delay),
+                    self._dishwasher_device_weight(),
+                    self._last_carbon,
+                    clip_lo=0.0,
+                    clip_hi=float(config.DISHWASHER_DEFER_MINUTES_MAX),
+                )
+        final_value = max(0.0, min(float(config.DISHWASHER_DEFER_MINUTES_MAX), float(final_value)))
+
+        if self._metrics:
+            sat = {
+                p: protocol.satisfaction_score(final_value, 0.0, preference_range=180.0)
+                for p in participants
+            }
+            self._metrics.log_negotiation(
+                NegotiationEvent(
+                    timestamp=self.env.now,
+                    scenario=self._scenario_name,
+                    device_id=self.agent_id,
+                    participants=participants,
+                    iterations=iteration,
+                    converged=converged_flag,
+                    final_value=float(final_value),
+                    satisfaction_scores=sat,
+                    carbon_intensity=self._last_carbon,
+                    fallback_used=fallback_used,
+                    participant_preferences={p: 0.0 for p in participants},
+                    preference_attribute="dishwasher_delay",
+                )
+            )
+
+        self.broadcast(
+            Message.create(
+                self.agent_id,
+                "broadcast",
+                MessageTypes.NegotiationResolved,
+                {
+                    "final_value": float(final_value),
+                    "device_id": self.agent_id,
+                    "attribute": "dishwasher_delay",
+                    "iterations": iteration,
+                    "converged": converged_flag,
+                    "fallback_used": fallback_used,
+                },
+                self.env.now,
+            )
+        )
+
+        for pid in participants_snapshot:
+            self._pending.pop(pid, None)
+
+        yield from self._physical_run_after_defer(float(final_value), [])
+
+    def _emit_dishwasher_schedule_decision(
+        self,
+        decision: dict[str, Any],
+        *,
+        source: str,
+        latency_ms: float,
+    ) -> None:
+        """Log + metrics (StreamingMetricsCollector → SSE + llm-inspector timeline)."""
+        approve = bool(decision.get("approve", False))
+        try:
+            defer = float(decision.get("defer_minutes", 0.0))
+        except (TypeError, ValueError):
+            defer = 0.0
+        reason = str(decision.get("reason", "") or "").strip() or "—"
+        summary = (
+            f"approve={approve} defer_minutes={defer:.2f} reason={reason!r} source={source} "
+            f"carbon_gco2kwh={self._last_carbon:.0f} pending={sorted(self._pending.keys())}"
+        )
+        logger.info("Washing machine %s: schedule decision — %s", self.agent_id, summary)
+        if self._metrics is None:
+            return
+        self._metrics.log_llm_api_call(
+            LLMApiCallEvent(
+                timestamp=float(self.env.now),
+                api_id="dishwasher_schedule",
+                success=True,
+                observation_summary=summary,
+                severity=str(protocol.carbon_band(self._last_carbon)).lower(),
+                halo_message_type="DishwasherScheduleDecision",
+                latency_ms=float(latency_ms),
+            )
+        )
+
+    def _llm_or_heuristic_decision(self) -> dict[str, Any]:
+        minute_of_day = float(self.env.now % config.MINUTES_PER_DAY)
+        band = protocol.carbon_band(self._last_carbon)
+        pending_lines = [
+            f"- {rid}: urgency={self._pending[rid]['urgency']:.2f}, requested_at_sim_min={self._pending[rid]['at']:.0f}"
+            for rid in sorted(self._pending.keys())
+        ]
+        fc = self._last_carbon_forecast or []
+        fc_txt = ", ".join(f"{x:.0f}" for x in fc[:4]) if fc else "n/a"
+        prompt = (
+            "You are scheduling a residential washing machine to reduce grid carbon impact while respecting requests.\n"
+            "Reply with JSON ONLY:\n"
+            f'{{"approve": <bool>, "defer_minutes": <number 0-{int(config.DISHWASHER_DEFER_MINUTES_MAX)}>, "reason": "<short string>"}}\n'
+            "approve=false: only if you cannot justify any defer_minutes this cycle (use sparingly).\n"
+            "defer_minutes: simulated minutes from NOW until the machine may START (0 = as soon as allowed).\n"
+            f"Minute-of-day (0=midnight): {minute_of_day:.0f}. Current grid carbon: {self._last_carbon:.0f} gCO2/kWh ({band}). "
+            f"Forecast sample gCO2/kWh: {fc_txt}.\n"
+            "Pending requests:\n"
+            + "\n".join(pending_lines)
+            + "\nIf requests are already waiting, prefer approve=true. Use the **smallest** defer_minutes that still "
+            "reflects carbon (often 30–90); only approach the max when carbon is extreme. "
+            "Use approve=false only when deferring is impossible.\n"
+        )
+        t0 = time.perf_counter()
+        raw = self._llm_client.complete_json(prompt, max_tokens=320, timeout=12.0)
+        latency_ms = (time.perf_counter() - t0) * 1000.0
+        if not isinstance(raw, dict):
+            d = self._heuristic_decision()
+            self._emit_dishwasher_schedule_decision(d, source="heuristic_fallback", latency_ms=latency_ms)
+            return d
+        approve = bool(raw.get("approve", False))
+        try:
+            defer = float(raw.get("defer_minutes", 0.0))
+        except (TypeError, ValueError):
+            defer = 0.0
+        reason = str(raw.get("reason", "")).strip() or "llm"
+        d = {"approve": approve, "defer_minutes": defer, "reason": reason}
+        self._emit_dishwasher_schedule_decision(d, source="llm", latency_ms=latency_ms)
+        return d
+
+    def _heuristic_decision(self) -> dict[str, Any]:
+        now = self.env.now
+        minute_of_day = now % config.MINUTES_PER_DAY
+        band = protocol.carbon_band(self._last_carbon)
+        in_spike = config.CARBON_SPIKE_START_MINUTE <= minute_of_day <= config.CARBON_SPIKE_END_MINUTE
+        high_carbon = in_spike or band == "high"
+
+        if high_carbon and self.carbon_sensitivity > 0.3:
+            # On truly dirty grid: nudge toward the next low-carbon window, capped.
+            day_start = (now // config.MINUTES_PER_DAY) * config.MINUTES_PER_DAY
+            start = day_start + float(config.DISHWASHER_LOW_CARBON_AFTER_MINUTE)
+            if start <= now:
+                start += config.MINUTES_PER_DAY
+            defer_raw = max(0.0, start - now)
+            cap = float(getattr(config, "DISHWASHER_DEFER_DIRTY_GRID_CAP_MINUTES", 90.0))
+            defer = min(defer_raw, cap)
+            reason = "heuristic_defer_dirty_grid"
+        elif band == "medium":
+            # Medium carbon: short token delay (5–15 sim min) to demonstrate deferral logic.
+            defer = float(self._rng.integers(5, 16))
+            reason = "heuristic_medium_carbon"
+        else:
+            # Low carbon or forecast improving: run as soon as possible.
+            defer = 0.0
+            reason = "heuristic_low_carbon_run_now"
+
+        # Multiple requesters: one cycle serves everyone; nudge defer down slightly on urgency.
+        n = len(self._pending)
+        if n >= 2 and defer > 0:
+            max_u = max(float(x["urgency"]) for x in self._pending.values())
+            factor = 1.0 - min(0.25, 0.06 * float(n - 1) + 0.12 * max(0.0, max_u - 0.5))
+            defer = max(0.0, defer * factor)
+            reason = f"{reason}_n{n}"
+
+        return {"approve": True, "defer_minutes": defer, "reason": reason}
 
     def run(self):
         while True:
@@ -800,8 +1207,19 @@ class ShowerDeviceAgent(DeviceAgent):
             pid = str(pl.get("person_id", msg.sender_id))
             prefs = pl.get("preferences", {})
             temp = float(prefs.get("temperature", 21.0))
+            explicit_shower = prefs.get("shower_minutes")
+            if explicit_shower is not None:
+                shower_min = float(
+                    np.clip(
+                        float(explicit_shower),
+                        config.SHOWER_DURATION_MIN_MINUTES,
+                        config.SHOWER_DURATION_MAX_MINUTES,
+                    )
+                )
+            else:
+                shower_min = float(protocol.shower_minutes_from_comfort_temp(temp))
             self._shower_preferences[pid] = {
-                "shower_minutes": float(protocol.shower_minutes_from_comfort_temp(temp)),
+                "shower_minutes": shower_min,
                 "comfort_weight": float(pl.get("comfort_weight", config.DEFAULT_COMFORT_WEIGHT)),
                 "is_home": bool(pl.get("is_home", True)),
             }

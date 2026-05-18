@@ -41,11 +41,11 @@ class ApiRegistry:
                     "updated weekly by the UK government."
                 ),
                 base_url="https://www.gov.uk",
-                endpoint="/government/publications/weekly-road-fuel-prices",
+                endpoint="/government/statistics/weekly-road-fuel-prices",
                 method="GET",
                 params={},
                 param_description=(
-                    "No parameters needed. Returns the latest weekly fuel price publication page."
+                    "No parameters needed. Fetches the official weekly road fuel prices statistics landing page (HTML)."
                 ),
                 trigger_conditions=["WeatherUpdate", "CarbonIntensityUpdate"],
                 trigger_keywords=["cold snap", "heatwave", "high carbon", "very high", "heating"],
@@ -100,7 +100,7 @@ class ApiRegistry:
                 },
                 param_description=(
                     "Searches for recent London disruption news. Requires 'apiKey' param "
-                    "added at call time from NEWSAPI_KEY env var."
+                    "added at call time from NEWSAPI_KEY or NEWS_API env var."
                 ),
                 trigger_conditions=["DepartureNotice", "ArrivalNotice", "WeatherUpdate"],
                 trigger_keywords=["departure", "arrived", "cold snap", "heatwave", "storm"],

@@ -21,7 +21,7 @@
       color: var(--fg);
       line-height: 1.45;
       padding: 1rem 1.25rem 2rem;
-      max-width: 960px;
+      max-width: 1200px;
       margin-left: auto;
       margin-right: auto;
     }
@@ -79,13 +79,72 @@
     .outcome strong {
       color: #79c0ff;
     }
+    .impact-wrap { margin-bottom: 1rem; }
+    .impact-table {
+      width: 100%;
+      font-size: 0.78rem;
+      border-collapse: collapse;
+    }
+    .impact-table th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 600;
+      padding: 0.45rem 0.35rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .impact-table td {
+      padding: 0.4rem 0.35rem;
+      border-bottom: 1px solid #21262d;
+      vertical-align: top;
+    }
+    .impact-table td.effect {
+      max-width: 22rem;
+      word-break: break-word;
+    }
+    .sev-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .sev-high { background: #f85149; }
+    .sev-medium { background: #f59e0b; }
+    .sev-low { background: #3fb950; }
+    .api-col-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem;
+      align-items: start;
+    }
+    .api-col {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #161b22;
+      min-height: 100px;
+      max-height: 72vh;
+      overflow-y: auto;
+      padding: 0.5rem 0.6rem 0.65rem;
+    }
+    .api-col h4 {
+      margin: 0 0 0.45rem 0;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      position: sticky;
+      top: 0;
+      background: #161b22;
+      padding-bottom: 0.25rem;
+      z-index: 1;
+      border-bottom: 1px solid #21262d;
+    }
   </style>
 </head>
 <body>
   <h1>LLM inspector</h1>
   <p class="sub">
     Polls <code>/api/llm-inspector</code> (same origin as this page). Start <strong>Run</strong> on the
-    <a href="/">main dashboard</a> in another tab first — the timeline is filled by the SimPy worker
+    <a href="/">main dashboard</a> in another tab first — the per-API timeline and impact log are filled by the SimPy worker
     while <code>/stream</code> is open. Cleared when a new stream starts.
   </p>
   <div class="row">
@@ -96,12 +155,23 @@
   <div id="err" class="err" style="display:none;"></div>
   <h2>How outputs change the simulation</h2>
   <div id="effects" class="card"><h3>Loading…</h3></div>
-  <h2>Timeline (newest first)</h2>
-  <div id="timeline"></div>
+  <h2>Real-world impact log</h2>
+  <p class="sub" style="margin-top:-0.5rem;margin-bottom:0.5rem;">
+    LLM-interpreted observations that become HALO bus messages (newest first). Outcome text matches the main sim feed / timeline.
+  </p>
+  <div id="impact" class="card impact-wrap"><div id="impact-inner">Loading…</div></div>
+  <h2>LLM events (per API)</h2>
+  <p class="sub" style="margin-top:-0.5rem;margin-bottom:0.5rem;">
+    Each column shows reasoning, API calls, observations, and pipeline errors for that registry API (newest first in each column).
+    <code>llm_reasoning</code> appears in every column listed in <code>api_ids</code>.
+    <code>_other</code> is for rows with no <code>api_id</code> or unknown ids.
+  </p>
+  <div id="api-columns" class="api-col-grid"></div>
 
   <script>
     const effectsEl = document.getElementById('effects');
-    const timelineEl = document.getElementById('timeline');
+    const impactInnerEl = document.getElementById('impact-inner');
+    const apiColumnsEl = document.getElementById('api-columns');
     const statusEl = document.getElementById('status');
     const errEl = document.getElementById('err');
     const autoChk = document.getElementById('auto');
@@ -112,6 +182,54 @@
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+    }
+
+    const LLM_API_LABELS = {
+      severe_weather: 'Hourly forecast · Open-Meteo (London)',
+      grocery_prices: 'Grocery search · Open Food Facts',
+      news_disruptions: 'News · disruption search',
+      fuel_prices: 'Fuel prices (probe)',
+    };
+
+    function llmApiDisplayLabel(apiId) {
+      const id = String(apiId || '').trim();
+      return LLM_API_LABELS[id] || id || '—';
+    }
+
+    function renderImpactLog(rows) {
+      if (!impactInnerEl) return;
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) {
+        impactInnerEl.innerHTML =
+          '<p style="margin:0;color:var(--muted);font-size:0.85rem;">No LLM-driven observations yet. Is a stream running?</p>';
+        return;
+      }
+      const body = list
+        .map((r) => {
+          const sev = String(r.severity || 'low').toLowerCase();
+          const sevClass =
+            sev === 'high' ? 'sev-high' : sev === 'medium' ? 'sev-medium' : 'sev-low';
+          const sum = String(r.summary || '');
+          const eff = String(r.sim_effect || '').trim();
+          const tip = eff ? sum + '\n\nOutcome: ' + eff : sum;
+          return (
+            '<tr>' +
+            `<td>${esc(String(r.sim_time_str || ''))}</td>` +
+            `<td title="api_id: ${esc(String(r.api_id || ''))}">${esc(llmApiDisplayLabel(r.api_id))}</td>` +
+            `<td class="effect" title="${esc(tip)}">${esc(sum)}` +
+            (eff
+              ? `<div class="outcome" style="margin-top:6px;"><strong>Outcome</strong> — ${esc(eff)}</div>`
+              : '') +
+            `</td>` +
+            `<td><span class="sev-dot ${sevClass}" title="${esc(sev)}"></span></td>` +
+            '</tr>'
+          );
+        })
+        .join('');
+      impactInnerEl.innerHTML =
+        '<table class="impact-table"><thead><tr><th>Time</th><th>API</th><th>Effect</th><th>Sev</th></tr></thead><tbody>' +
+        body +
+        '</tbody></table>';
     }
 
     function renderEffects(ref) {
@@ -125,68 +243,130 @@
       effectsEl.innerHTML = '<h3>Effects reference</h3><dl class="effects">' + parts.join('') + '</dl>';
     }
 
-    function renderTimeline(items) {
-      if (!items.length) {
-        timelineEl.innerHTML =
-          '<div class="card"><p style="margin:0;color:var(--muted);font-size:0.85rem;">No LLM events yet. Is a stream running?</p></div>';
+    function renderOneTimelineCard(ev) {
+      const k = ev.kind || '?';
+      let body = '';
+      if (k === 'llm_reasoning') {
+        const hints = Array.isArray(ev.pending_effect_hints)
+          ? ev.pending_effect_hints
+              .map(
+                (h) =>
+                  `<li><code>${esc(h.api_id)}</code> → <code>${esc(h.halo_message_type || '')}</code>: ${esc(h.effect_summary || '')}</li>`,
+              )
+              .join('')
+          : '';
+        const ctx = Array.isArray(ev.context_snapshot)
+          ? ev.context_snapshot
+              .map(
+                (c) =>
+                  `[${esc(c.sim_time_str || '')}] ${esc(c.msg_type || '')} (${esc(c.sender || '')}) — ${esc(c.summary || '')}`,
+              )
+              .join('\n')
+          : '';
+        const ids =
+          Array.isArray(ev.api_ids) && ev.api_ids.length > 0
+            ? ev.api_ids.map((x) => `<code>${esc(String(x))}</code>`).join(', ')
+            : `<code>${esc(String(ev.api_id || ''))}</code>`;
+        body =
+          `<div class="tl-time">${esc(ev.sim_time_str || '')}</div>` +
+          `<div style="margin:0.35rem 0;"><strong>${ev.relevant ? 'Relevant' : 'Not relevant'}</strong> · api_ids: ${ids}</div>` +
+          `<div style="font-size:0.85rem;">${esc(String(ev.reason || ''))}</div>` +
+          (hints ? `<ul style="margin:0.4rem 0 0 1rem;font-size:0.78rem;color:var(--muted);">${hints}</ul>` : '') +
+          (ctx
+            ? `<details><summary>Context window (${ev.context_size || 0} lines)</summary><pre class="ctx">${esc(ctx)}</pre></details>`
+            : '');
+      } else if (k === 'llm_api_call') {
+        body =
+          `<div class="tl-time">${esc(ev.sim_time_str || '')}</div>` +
+          `<div>API <code>${esc(String(ev.api_id || ''))}</code> · ${ev.success ? '<span style="color:var(--green)">ok</span>' : '<span style="color:#f85149">fail</span>'}</div>` +
+          `<div style="font-size:0.8rem;color:var(--muted);">→ <code>${esc(String(ev.halo_message_type || ''))}</code></div>` +
+          `<div style="font-size:0.82rem;margin-top:0.35rem;">${esc(String(ev.observation_summary || ''))}</div>`;
+      } else if (k === 'llm_observation') {
+        const pl = ev.payload && typeof ev.payload === 'object' ? ev.payload : {};
+        const extra =
+          pl.products && Array.isArray(pl.products) && pl.products.length
+            ? `<div style="font-size:0.72rem;color:var(--muted);margin-top:0.35rem;">Products (sample): ${esc(
+                pl.products
+                  .slice(0, 4)
+                  .map((p) => (p && p.product_name) || (p && p.name) || '')
+                  .filter(Boolean)
+                  .join(' · '),
+              )}</div>`
+            : '';
+        body =
+          `<div class="tl-time">${esc(ev.sim_time_str || '')}</div>` +
+          `<div><code>${esc(String(ev.msg_type || ''))}</code> · ${esc(String(ev.severity || ''))}</div>` +
+          `<div style="font-size:0.82rem;margin-top:0.35rem;">${esc(String(ev.summary || ''))}</div>` +
+          extra;
+      } else if (k === 'llm_pipeline_error') {
+        body =
+          `<div class="tl-time">${esc(ev.sim_time_str || '')}</div>` +
+          `<div><code>${esc(String(ev.phase || ''))}</code> · <code>${esc(String(ev.api_id || ''))}</code></div>` +
+          `<div style="font-size:0.82rem;">${esc(String(ev.message || ''))}</div>`;
+      } else {
+        body = '<pre class="ctx">' + esc(JSON.stringify(ev, null, 2)) + '</pre>';
+      }
+      const out = String(ev.sim_effect || '').trim();
+      const outHtml = out
+        ? `<div class="outcome"><strong>Outcome</strong> — ${esc(out)}</div>`
+        : '';
+      return `<div class="card"><span class="tl-kind">${esc(k)}</span>${body}${outHtml}</div>`;
+    }
+
+    function renderApiColumns(byApi, columnIds) {
+      if (!apiColumnsEl) return;
+      const keys = [];
+      if (Array.isArray(columnIds)) keys.push(...columnIds);
+      keys.push('_other');
+      const seen = new Set();
+      const ordered = keys.filter((k) => {
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      if (!ordered.length) {
+        apiColumnsEl.innerHTML =
+          '<p style="margin:0;color:var(--muted);font-size:0.85rem;">No API columns (empty registry).</p>';
         return;
       }
-      const rev = items.slice().reverse();
-      timelineEl.innerHTML = rev
-        .map((ev) => {
-          const k = ev.kind || '?';
-          let body = '';
-          if (k === 'llm_reasoning') {
-            const hints = Array.isArray(ev.pending_effect_hints)
-              ? ev.pending_effect_hints
-                  .map(
-                    (h) =>
-                      `<li><code>${esc(h.api_id)}</code> → <code>${esc(h.halo_message_type || '')}</code>: ${esc(h.effect_summary || '')}</li>`,
-                  )
-                  .join('')
-              : '';
-            const ctx = Array.isArray(ev.context_snapshot)
-              ? ev.context_snapshot
-                  .map(
-                    (c) =>
-                      `[${esc(c.sim_time_str || '')}] ${esc(c.msg_type || '')} (${esc(c.sender || '')}) — ${esc(c.summary || '')}`,
-                  )
-                  .join('\n')
-              : '';
-            body =
-              `<div class="tl-time">${esc(ev.sim_time_str || '')}</div>` +
-              `<div style="margin:0.35rem 0;"><strong>${ev.relevant ? 'Relevant' : 'Not relevant'}</strong> · api_id: <code>${esc(String(ev.api_id || ''))}</code></div>` +
-              `<div style="font-size:0.85rem;">${esc(String(ev.reason || ''))}</div>` +
-              (hints ? `<ul style="margin:0.4rem 0 0 1rem;font-size:0.78rem;color:var(--muted);">${hints}</ul>` : '') +
-              (ctx
-                ? `<details><summary>Context window (${ev.context_size || 0} lines)</summary><pre class="ctx">${esc(ctx)}</pre></details>`
-                : '');
-          } else if (k === 'llm_api_call') {
-            body =
-              `<div class="tl-time">${esc(ev.sim_time_str || '')}</div>` +
-              `<div>API <code>${esc(String(ev.api_id || ''))}</code> · ${ev.success ? '<span style="color:var(--green)">ok</span>' : '<span style="color:#f85149">fail</span>'}</div>` +
-              `<div style="font-size:0.8rem;color:var(--muted);">→ <code>${esc(String(ev.halo_message_type || ''))}</code></div>` +
-              `<div style="font-size:0.82rem;margin-top:0.35rem;">${esc(String(ev.observation_summary || ''))}</div>`;
-          } else if (k === 'llm_observation') {
-            body =
-              `<div class="tl-time">${esc(ev.sim_time_str || '')}</div>` +
-              `<div><code>${esc(String(ev.msg_type || ''))}</code> · ${esc(String(ev.severity || ''))}</div>` +
-              `<div style="font-size:0.82rem;margin-top:0.35rem;">${esc(String(ev.summary || ''))}</div>`;
-          } else if (k === 'llm_pipeline_error') {
-            body =
-              `<div class="tl-time">${esc(ev.sim_time_str || '')}</div>` +
-              `<div><code>${esc(String(ev.phase || ''))}</code> · <code>${esc(String(ev.api_id || ''))}</code></div>` +
-              `<div style="font-size:0.82rem;">${esc(String(ev.message || ''))}</div>`;
-          } else {
-            body = '<pre class="ctx">' + esc(JSON.stringify(ev, null, 2)) + '</pre>';
-          }
-          const out = String(ev.sim_effect || '').trim();
-          const outHtml = out
-            ? `<div class="outcome"><strong>Outcome</strong> — ${esc(out)}</div>`
-            : '';
-          return `<div class="card"><span class="tl-kind">${esc(k)}</span>${body}${outHtml}</div>`;
+      apiColumnsEl.innerHTML = ordered
+        .map((col) => {
+          const rows = byApi && Array.isArray(byApi[col]) ? byApi[col] : [];
+          const title =
+            col === '_other'
+              ? '_other'
+              : `${esc(llmApiDisplayLabel(col))} <span style="opacity:0.75">(${esc(col)})</span>`;
+          const inner =
+            rows.length === 0
+              ? '<p style="margin:0;color:var(--muted);font-size:0.78rem;">—</p>'
+              : rows.map((ev) => renderOneTimelineCard(ev)).join('');
+          const safeCol = String(col).replace(/"/g, '');
+          return `<div class="api-col" data-col="${safeCol}"><h4>${title}</h4>${inner}</div>`;
         })
         .join('');
+    }
+
+    function captureInspectorScrollState() {
+      const winY = window.scrollY || document.documentElement.scrollTop || 0;
+      const colMap = {};
+      if (apiColumnsEl) {
+        apiColumnsEl.querySelectorAll('.api-col[data-col]').forEach((el) => {
+          const k = el.getAttribute('data-col');
+          if (k) colMap[k] = el.scrollTop;
+        });
+      }
+      return { winY, colMap };
+    }
+
+    function restoreInspectorScrollState(state) {
+      if (!state) return;
+      window.scrollTo(0, state.winY);
+      if (apiColumnsEl && state.colMap) {
+        apiColumnsEl.querySelectorAll('.api-col[data-col]').forEach((el) => {
+          const k = el.getAttribute('data-col');
+          if (k != null && state.colMap[k] != null) el.scrollTop = state.colMap[k];
+        });
+      }
     }
 
     async function load() {
@@ -196,11 +376,21 @@
         const r = await fetch('/api/llm-inspector', { cache: 'no-store' });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const data = await r.json();
+        const scroll = captureInspectorScrollState();
         renderEffects(data.effects_reference);
-        renderTimeline(data.timeline || []);
+        renderImpactLog(data.impact_log || []);
+        renderApiColumns(data.by_api || {}, data.by_api_column_ids || []);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => restoreInspectorScrollState(scroll));
+        });
+        const nBuf = data.timeline_count ?? (data.timeline || []).length;
         statusEl.textContent =
-          'timeline_count=' +
-          (data.timeline_count ?? (data.timeline || []).length) +
+          'buffer=' +
+          nBuf +
+          ' · impact=' +
+          (data.impact_log_count ?? (data.impact_log || []).length) +
+          ' · cols=' +
+          (Array.isArray(data.by_api_column_ids) ? data.by_api_column_ids.length + 1 : '—') +
           ' · ' +
           new Date().toLocaleTimeString();
       } catch (e) {
