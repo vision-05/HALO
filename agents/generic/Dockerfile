@@ -72,10 +72,24 @@ FROM base AS mocktv
 COPY generic/src/ ./generic/src/
 COPY discovery/src/ ./discovery/src/
 ENTRYPOINT ["python", "generic/src/mock_tv_agent.py"]
-FROM base AS washing
 
+
+FROM base AS washingmachine
 COPY generic/src/ ./generic/src/
 COPY discovery/src/ ./discovery/src/
-COPY generic/ ./generic/
+ENTRYPOINT ["python", "generic/src/washing_machine.py"]
 
-ENTRYPOINT [ "python", "generic/src/washing_machine.py" ]
+FROM base AS blinds
+COPY generic/src/ ./generic/src/
+COPY discovery/src/ ./discovery/src/
+ENTRYPOINT ["python", "generic/src/blinds.py"]
+
+FROM base AS smartlight
+COPY generic/src/ ./generic/src/
+COPY discovery/src/ ./discovery/src/
+ENTRYPOINT ["python", "generic/src/light_agent.py"]
+
+FROM base AS livingroomcombo
+COPY generic/src/ ./generic/src/
+COPY discovery/src/ ./discovery/src/
+ENTRYPOINT ["python", "generic/src/living_room.py"]

@@ -3,3 +3,5 @@ ollama_data/
 *.env
 venv/
 site/
+*.json
+>>>>>>> d866cde291d6d6b0c8937e830cadce8d302c4f60

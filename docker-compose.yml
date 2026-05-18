@@ -354,8 +354,97 @@ services:
       - ./agents/db:/app/db
     environment:
       - HALO_HTTP_KEY
-      - TV_ESP32_HOST=192.168.7.87  
+      - TV_ESP32_HOST=192.168.7.87
       - PYTHONUNBUFFERED=1
+    command: python -m watchfiles 'python /app/generic/src/mock_tv_agent.py' /app
+  
+  mock-washing:
+    build:
+      context: ./agents
+      dockerfile: generic/Dockerfile
+      target: washingmachine
+    network_mode: host
+    volumes:
+      - ./agents/generic/src:/app/generic/src
+      - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
+    environment:
+      - HALO_HTTP_KEY
+      - WASH_ESP32_HOST=192.168.7.89    
+      - PYTHONUNBUFFERED=1
+    command: python -m watchfiles 'python /app/generic/src/washing_machine.py' /app
 
+  blinds:
+    build:
+      context: ./agents
+      dockerfile: generic/Dockerfile
+      target: blinds
+    network_mode: host
+    volumes:
+      - ./agents/generic/src:/app/generic/src
+      - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
+    environment:
+      - HALO_HTTP_KEY
+      - BLINDS_ESP32_HOST=192.168.7.90
+      - PYTHONUNBUFFERED=1
+    command: python -m watchfiles 'python /app/generic/src/blinds.py' /app
+
+  living-room-light:
+    build: { context: ./agents, dockerfile: generic/Dockerfile, target: smartlight }
+    network_mode: host
+    volumes:
+      - ./agents/generic/src:/app/generic/src
+      - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
+    environment:
+      - HALO_HTTP_KEY
+      - LIGHT_NAME=LivingRoomLight
+      - LIGHT_ESP32_HOST=192.168.7.87
+      - PYTHONUNBUFFERED=1
+    command: python -m watchfiles 'python /app/generic/src/light_agent.py' /app
+
+  bedroom-light:
+    build: { context: ./agents, dockerfile: generic/Dockerfile, target: smartlight }
+    network_mode: host
+    volumes:
+      - ./agents/generic/src:/app/generic/src
+      - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
+    environment:
+      - HALO_HTTP_KEY
+      - LIGHT_NAME=BedroomLight
+      - LIGHT_ESP32_HOST=192.168.7.90
+      - PYTHONUNBUFFERED=1
+    command: python -m watchfiles 'python /app/generic/src/light_agent.py' /app
+
+  kitchen-light:
+    build: { context: ./agents, dockerfile: generic/Dockerfile, target: smartlight }
+    network_mode: host
+    volumes:
+      - ./agents/generic/src:/app/generic/src
+      - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
+    environment:
+      - HALO_HTTP_KEY
+      - LIGHT_NAME=KitchenLight
+      - LIGHT_ESP32_HOST=10.127.89.27
+      - PYTHONUNBUFFERED=1
+    command: python -m watchfiles 'python /app/generic/src/light_agent.py' /app
+  livingroom:
+    build:
+      context: ./agents
+      dockerfile: generic/Dockerfile
+      target: livingroomcombo
+    network_mode: host
+    volumes:
+      - ./agents/generic/src:/app/generic/src
+      - ./agents/discovery/src:/app/discovery/src
+      - ./agents/db:/app/db
+    environment:
+      - HALO_HTTP_KEY
+      - COMBO_ESP32_HOST=10.127.89.27
+      - PYTHONUNBUFFERED=1
+    command: python -m watchfiles 'python /app/generic/src/living_room.py' /app
 volumes:
   dozzle_data:

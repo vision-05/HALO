@@ -1,6 +1,8 @@
 from generic.src.esp32_agent import Esp32Agent
 import asyncio
 import os
+os.chdir("/app")
+import json
 
 
 class MockTV(Esp32Agent):
@@ -31,17 +33,26 @@ class MockTV(Esp32Agent):
         """Blank the screen."""
         return await self._send("TV_OFF")
 
+    
     async def open_netflix(self, msg: dict) -> str:
-        """Play the Netflix intro animation then show the Netflix home screen."""
-        return await self._send("NETFLIX")
+        result = await self._send("NETFLIX")
+        await self.send_msg("LivingRoomLight", json.dumps({
+            "action": "dim_for_media", "source": self.name,
+            "target": "LivingRoomLight", "params": {}
+        }))
+        return "Netflix opened."
     
     async def go_to_home_screen(self, msg: dict) -> str:
         """Go to the TV home screen."""
         return await self._send("TV_HOME")
     
     async def close_netflix(self, msg: dict) -> str:
-        """Close Netflix and return to the TV home screen (TV stays on)."""
-        return await self._send("TV_HOME")
+        result = await self._send("TV_HOME")
+        await self.send_msg("LivingRoomLight", json.dumps({
+            "action": "restore_from_media", "source": self.name,
+            "target": "LivingRoomLight", "params": {}
+        }))
+        return "Netflix closed."
 
 
 async def main():
